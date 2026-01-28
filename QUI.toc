@@ -11,7 +11,7 @@
 ## LoadOnDemand: 0
 ## SavedVariables: QUI_DB, QUIDB
 
-## X-Contributors: Zol, Mondo, LiQiudGG, Quazii (original creator)
+## X-Contributors: Quazii (original creator), LiQiuDGG, Mondo, Zol
 ## X-License: GPLv3
 
 load.xml
