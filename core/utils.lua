@@ -281,6 +281,15 @@ function Helpers.GetSkinAccentColor()
     return sr, sg, sb, sa
 end
 
+--- Get the addon-wide accent color (from options panel color picker)
+--- @return number, number, number, number r, g, b, a
+function Helpers.GetAddonAccentColor()
+    if QUI and QUI.GetAddonAccentColor then
+        return QUI:GetAddonAccentColor()
+    end
+    return 0.204, 0.827, 0.6, 1  -- Fallback to mint
+end
+
 --- Get just the skin background color
 --- @return number, number, number, number r, g, b, a
 function Helpers.GetSkinBgColor()

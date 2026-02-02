@@ -24,7 +24,7 @@ local function BuildSkinningTab(tabContent)
 
         -- Initialize defaults
         if general.skinUseClassColor == nil then general.skinUseClassColor = true end
-        if general.skinCustomColor == nil then general.skinCustomColor = {0.2, 1.0, 0.6, 1} end
+        if general.addonAccentColor == nil then general.addonAccentColor = {0.204, 0.827, 0.6, 1} end
         if general.skinKeystoneFrame == nil then general.skinKeystoneFrame = true end
 
         -- ═══════════════════════════════════════════════════════════════
@@ -82,13 +82,49 @@ local function BuildSkinningTab(tabContent)
             if customColorPicker then
                 customColorPicker:SetEnabled(not general.skinUseClassColor)
             end
+            -- Update accent to match class color or custom color
+            if general.skinUseClassColor then
+                local _, class = UnitClass("player")
+                local color = RAID_CLASS_COLORS[class]
+                if color and GUI.ApplyAccentColor then
+                    GUI:ApplyAccentColor(color.r, color.g, color.b)
+                end
+            else
+                local c = general.addonAccentColor or {0.204, 0.827, 0.6, 1}
+                if GUI.ApplyAccentColor then
+                    GUI:ApplyAccentColor(c[1], c[2], c[3])
+                end
+            end
             RefreshAllSkinning()
+            if GUI.RefreshAccentColor then
+                GUI:RefreshAccentColor()
+            end
         end)
         useClassColorCheck:SetPoint("TOPLEFT", PAD, y)
         useClassColorCheck:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
         y = y - FORM_ROW
 
-        customColorPicker = GUI:CreateFormColorPicker(tabContent, "Custom Color", "skinCustomColor", general, RefreshAllSkinning, { noAlpha = true })
+        customColorPicker = GUI:CreateFormColorPicker(tabContent, "Accent Color", "addonAccentColor", general, function(r, g, b, a)
+            -- Sync the options panel theme with the new accent color
+            if GUI.ApplyAccentColor then
+                GUI:ApplyAccentColor(r, g, b)
+            end
+            RefreshAllSkinning()
+            -- Schedule a panel rebuild when the color picker closes
+            if not GUI._accentPickerWatcher then
+                local watcher = CreateFrame("Frame")
+                GUI._accentPickerWatcher = watcher
+                watcher:SetScript("OnUpdate", function(self)
+                    if not ColorPickerFrame:IsShown() then
+                        self:SetScript("OnUpdate", nil)
+                        GUI._accentPickerWatcher = nil
+                        if GUI.RefreshAccentColor then
+                            GUI:RefreshAccentColor()
+                        end
+                    end
+                end)
+            end
+        end, { noAlpha = true })
         customColorPicker:SetPoint("TOPLEFT", PAD, y)
         customColorPicker:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
         customColorPicker:SetEnabled(not general.skinUseClassColor)  -- Initial state

@@ -62,6 +62,27 @@ GUI.Colors = {
 
 local C = GUI.Colors
 
+---------------------------------------------------------------------------
+-- ACCENT COLOR - Derive theme colors from a base accent color
+---------------------------------------------------------------------------
+function GUI:ApplyAccentColor(r, g, b)
+    local function lerp(a, b, t) return a + (b - a) * t end
+    -- Update in-place to preserve existing table references
+    C.accent[1], C.accent[2], C.accent[3], C.accent[4] = r, g, b, 1
+    C.accentLight[1] = lerp(r, 1, 0.3)
+    C.accentLight[2] = lerp(g, 1, 0.3)
+    C.accentLight[3] = lerp(b, 1, 0.3)
+    C.accentLight[4] = 1
+    C.accentDark[1], C.accentDark[2], C.accentDark[3], C.accentDark[4] = r * 0.5, g * 0.5, b * 0.5, 1
+    C.accentHover[1] = lerp(r, 1, 0.15)
+    C.accentHover[2] = lerp(g, 1, 0.15)
+    C.accentHover[3] = lerp(b, 1, 0.15)
+    C.accentHover[4] = 1
+    C.tabSelected[1], C.tabSelected[2], C.tabSelected[3] = r, g, b
+    C.borderAccent[1], C.borderAccent[2], C.borderAccent[3] = r, g, b
+    C.sectionHeader[1], C.sectionHeader[2], C.sectionHeader[3] = C.accentLight[1], C.accentLight[2], C.accentLight[3]
+end
+
 -- Panel dimensions (used for widget sizing)
 GUI.PANEL_WIDTH = 1000
 GUI.SIDEBAR_WIDTH = 150
@@ -990,7 +1011,7 @@ function GUI:CreateCheckbox(parent, label, dbKey, dbTable, onChange)
     box.check:SetTexture("Interface\\Buttons\\UI-CheckBox-Check")
     box.check:SetPoint("CENTER", 0, 0)
     box.check:SetSize(20, 20)
-    box.check:SetVertexColor(0.204, 0.827, 0.6, 1)  -- Mint #34D399
+    box.check:SetVertexColor(C.accent[1], C.accent[2], C.accent[3], 1)
     box.check:SetDesaturated(true)  -- Remove yellow, then apply mint
     box.check:Hide()
     
@@ -1069,7 +1090,7 @@ function GUI:CreateCheckboxCentered(parent, label, dbKey, dbTable, onChange)
     box.check:SetTexture("Interface\\Buttons\\UI-CheckBox-Check")
     box.check:SetPoint("CENTER", 0, 0)
     box.check:SetSize(20, 20)
-    box.check:SetVertexColor(0.204, 0.827, 0.6, 1)
+    box.check:SetVertexColor(C.accent[1], C.accent[2], C.accent[3], 1)
     box.check:SetDesaturated(true)
     box.check:Hide()
     
@@ -1221,7 +1242,7 @@ function GUI:CreateCheckboxInverted(parent, label, dbKey, dbTable, onChange)
     box.check:SetTexture("Interface\\Buttons\\UI-CheckBox-Check")
     box.check:SetPoint("CENTER", 0, 0)
     box.check:SetSize(20, 20)
-    box.check:SetVertexColor(0.204, 0.827, 0.6, 1)
+    box.check:SetVertexColor(C.accent[1], C.accent[2], C.accent[3], 1)
     box.check:SetDesaturated(true)
     box.check:Hide()
     
@@ -1701,7 +1722,7 @@ function GUI:CreateDropdown(parent, label, options, dbKey, dbTable, onChange)
         btn:SetScript("OnEnter", function(self)
             pcall(function()
                 self:SetBackdrop({bgFile = "Interface\\Buttons\\WHITE8x8"})
-                self:SetBackdropColor(0.204, 0.827, 0.6, 0.25)  -- Mint at 25% opacity (ghost)
+                self:SetBackdropColor(C.accent[1], C.accent[2], C.accent[3], 0.25)
             end)
             -- Keep text white
         end)
@@ -1948,7 +1969,7 @@ function GUI:CreateDropdownFullWidth(parent, label, options, dbKey, dbTable, onC
         btn:SetScript("OnEnter", function(self)
             pcall(function()
                 self:SetBackdrop({bgFile = "Interface\\Buttons\\WHITE8x8"})
-                self:SetBackdropColor(0.204, 0.827, 0.6, 0.25)  -- Mint at 25% opacity (ghost)
+                self:SetBackdropColor(C.accent[1], C.accent[2], C.accent[3], 0.25)
             end)
             -- Keep text white
         end)
@@ -2289,7 +2310,7 @@ function GUI:CreateFormCheckboxOriginal(parent, label, dbKey, dbTable, onChange)
     box.check:SetTexture("Interface\\Buttons\\UI-CheckBox-Check")
     box.check:SetPoint("CENTER", 0, 0)
     box.check:SetSize(22, 22)
-    box.check:SetVertexColor(0.204, 0.827, 0.6, 1)
+    box.check:SetVertexColor(C.accent[1], C.accent[2], C.accent[3], 1)
     box.check:SetDesaturated(true)
     box.check:Hide()
 
@@ -3405,6 +3426,15 @@ function GUI:CreateMainFrame()
         return self.MainFrame
     end
 
+    -- Initialize accent colors from saved DB before creating any widgets
+    local db = QUI.QUICore and QUI.QUICore.db
+    local profile = db and db.profile
+    local general = profile and profile.general
+    local accentDB = general and general.addonAccentColor
+    if accentDB then
+        GUI:ApplyAccentColor(accentDB[1], accentDB[2], accentDB[3])
+    end
+
     local FRAME_WIDTH = GUI.PANEL_WIDTH
     local FRAME_HEIGHT = 850
     local SIDEBAR_W = GUI.SIDEBAR_WIDTH
@@ -3451,17 +3481,190 @@ function GUI:CreateMainFrame()
     title:SetText("QUI")
     title:SetPoint("TOPLEFT", 12, -10)
 
-    -- Version text (mint green, to the left of close button)
+    -- Version text (accent colored, to the left of close button)
     local version = frame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     SetFont(version, 11, "", C.accentLight)
     local versionText = (QUI and QUI.versionString) or C_AddOns.GetAddOnMetadata("QUI", "Version") or "2.00"
     version:SetText("v" .. versionText)
     version:SetPoint("TOPRIGHT", -30, -10)
 
+    -- Forward-declare thumb (created with scale slider below, but referenced in accent callbacks)
+    local thumb
+
+    -- Accent Color swatch (parented to titleBar so it receives clicks above the drag region)
+    local accentSwatch = CreateFrame("Button", nil, titleBar, "BackdropTemplate")
+    accentSwatch:SetSize(14, 14)
+    accentSwatch:SetPoint("TOPLEFT", titleBar, "TOPLEFT", SIDEBAR_W + 14, -8)
+    accentSwatch:SetBackdrop({
+        bgFile = "Interface\\Buttons\\WHITE8x8",
+        edgeFile = "Interface\\Buttons\\WHITE8x8",
+        edgeSize = 1,
+    })
+    accentSwatch:SetBackdropColor(C.accent[1], C.accent[2], C.accent[3], 1)
+    accentSwatch:SetBackdropBorderColor(0.4, 0.4, 0.4, 1)
+
+    local accentLabel = titleBar:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    SetFont(accentLabel, 10, "", C.textMuted)
+    accentLabel:SetText("Accent")
+    accentLabel:SetPoint("LEFT", accentSwatch, "RIGHT", 4, 0)
+
+    -- Helper to refresh all skinned in-game elements
+    local function RefreshAllSkinning()
+        if _G.QUI_RefreshKeystoneColors then _G.QUI_RefreshKeystoneColors() end
+        if _G.QUI_RefreshAlertColors then _G.QUI_RefreshAlertColors() end
+        if _G.QUI_RefreshLootColors then _G.QUI_RefreshLootColors() end
+        if _G.QUI_RefreshMPlusTimerColors then _G.QUI_RefreshMPlusTimerColors() end
+        if _G.QUI_RefreshCharacterFrameColors then _G.QUI_RefreshCharacterFrameColors() end
+        if _G.QUI_RefreshInspectColors then _G.QUI_RefreshInspectColors() end
+        if _G.QUI_RefreshPowerBarAltColors then _G.QUI_RefreshPowerBarAltColors() end
+        if _G.QUI_RefreshGameMenuColors then _G.QUI_RefreshGameMenuColors() end
+        if _G.QUI_RefreshOverrideActionBarColors then _G.QUI_RefreshOverrideActionBarColors() end
+        if _G.QUI_RefreshObjectiveTrackerColors then _G.QUI_RefreshObjectiveTrackerColors() end
+        if _G.QUI_RefreshInstanceFramesColors then _G.QUI_RefreshInstanceFramesColors() end
+        if _G.QUI_RefreshReadyCheckColors then _G.QUI_RefreshReadyCheckColors() end
+    end
+
+    -- Helper to apply accent color to header elements + theme + skinning
+    local function ApplyAccentToAll(r, g, b)
+        GUI:ApplyAccentColor(r, g, b)
+        accentSwatch:SetBackdropColor(r, g, b, 1)
+        title:SetTextColor(C.accentLight[1], C.accentLight[2], C.accentLight[3], 1)
+        version:SetTextColor(C.accentLight[1], C.accentLight[2], C.accentLight[3], 1)
+        RefreshAllSkinning()
+    end
+
+    -- "Class" toggle — use player class color as the accent
+    local classToggle = CreateFrame("Button", nil, titleBar)
+    classToggle:SetSize(50, 14)
+    classToggle:SetPoint("LEFT", accentLabel, "RIGHT", 8, 0)
+
+    local classBox = CreateFrame("Frame", nil, classToggle, "BackdropTemplate")
+    classBox:SetSize(12, 12)
+    classBox:SetPoint("LEFT", 0, 0)
+    classBox:SetBackdrop({
+        bgFile = "Interface\\Buttons\\WHITE8x8",
+        edgeFile = "Interface\\Buttons\\WHITE8x8",
+        edgeSize = 1,
+    })
+    classBox:SetBackdropColor(0.1, 0.1, 0.1, 1)
+    classBox:SetBackdropBorderColor(0.4, 0.4, 0.4, 1)
+
+    local classCheck = classBox:CreateTexture(nil, "OVERLAY")
+    classCheck:SetTexture("Interface\\Buttons\\UI-CheckBox-Check")
+    classCheck:SetPoint("CENTER", 0, 0)
+    classCheck:SetSize(16, 16)
+    classCheck:SetVertexColor(C.accent[1], C.accent[2], C.accent[3], 1)
+    classCheck:SetDesaturated(true)
+    classCheck:Hide()
+
+    local classLabel = classToggle:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    SetFont(classLabel, 10, "", C.textMuted)
+    classLabel:SetText("Class")
+    classLabel:SetPoint("LEFT", classBox, "RIGHT", 3, 0)
+
+    local function GetClassColor()
+        local _, class = UnitClass("player")
+        local color = RAID_CLASS_COLORS[class]
+        if color then return color.r, color.g, color.b end
+        return 0.204, 0.827, 0.6
+    end
+
+    local function UpdateAccentFromDB()
+        local db = QUI.QUICore and QUI.QUICore.db and QUI.QUICore.db.profile and QUI.QUICore.db.profile.general
+        if not db then return end
+        local useClass = db.skinUseClassColor
+        if useClass then
+            local cr, cg, cb = GetClassColor()
+            ApplyAccentToAll(cr, cg, cb)
+            accentSwatch:SetAlpha(0.5)
+            classCheck:Show()
+        else
+            local c = db.addonAccentColor or {0.204, 0.827, 0.6, 1}
+            ApplyAccentToAll(c[1], c[2], c[3])
+            accentSwatch:SetAlpha(1)
+            classCheck:Hide()
+        end
+    end
+
+    -- Initialize class toggle state
+    local initDB = QUI.QUICore and QUI.QUICore.db and QUI.QUICore.db.profile and QUI.QUICore.db.profile.general
+    if initDB and initDB.skinUseClassColor then
+        local cr, cg, cb = GetClassColor()
+        ApplyAccentToAll(cr, cg, cb)
+        accentSwatch:SetAlpha(0.5)
+        classCheck:Show()
+    end
+
+    classToggle:SetScript("OnClick", function()
+        local db = QUI.QUICore and QUI.QUICore.db and QUI.QUICore.db.profile and QUI.QUICore.db.profile.general
+        if not db then return end
+        db.skinUseClassColor = not db.skinUseClassColor
+        -- Update theme tables first, then rebuild panel
+        if db.skinUseClassColor then
+            local cr, cg, cb = GetClassColor()
+            GUI:ApplyAccentColor(cr, cg, cb)
+        else
+            local c = db.addonAccentColor or {0.204, 0.827, 0.6, 1}
+            GUI:ApplyAccentColor(c[1], c[2], c[3])
+        end
+        RefreshAllSkinning()
+        GUI:RefreshAccentColor()
+    end)
+
+    classToggle:SetScript("OnEnter", function()
+        classBox:SetBackdropBorderColor(C.accent[1], C.accent[2], C.accent[3], 1)
+    end)
+    classToggle:SetScript("OnLeave", function()
+        classBox:SetBackdropBorderColor(0.4, 0.4, 0.4, 1)
+    end)
+
+    accentSwatch:SetScript("OnEnter", function(self)
+        pcall(self.SetBackdropBorderColor, self, unpack(C.accentLight))
+    end)
+    accentSwatch:SetScript("OnLeave", function(self)
+        pcall(self.SetBackdropBorderColor, self, 0.4, 0.4, 0.4, 1)
+    end)
+
+    accentSwatch:SetScript("OnClick", function()
+        local db = QUI.QUICore and QUI.QUICore.db and QUI.QUICore.db.profile and QUI.QUICore.db.profile.general
+        if not db then return end
+        -- Don't open picker if class color is active
+        if db.skinUseClassColor then return end
+        local cur = db.addonAccentColor or {0.204, 0.827, 0.6, 1}
+        -- Schedule panel rebuild when ColorPickerFrame closes
+        local pickerWatcher = CreateFrame("Frame")
+        pickerWatcher:SetScript("OnUpdate", function(self)
+            if not ColorPickerFrame:IsShown() then
+                self:SetScript("OnUpdate", nil)
+                -- Rebuild panel to apply new accent everywhere
+                GUI:RefreshAccentColor()
+                RefreshAllSkinning()
+            end
+        end)
+        ColorPickerFrame:SetupColorPickerAndShow({
+            r = cur[1], g = cur[2], b = cur[3], opacity = 1,
+            hasOpacity = false,
+            swatchFunc = function()
+                local r, g, b = ColorPickerFrame:GetColorRGB()
+                db.addonAccentColor = {r, g, b, 1}
+                -- Live-preview on header only (full rebuild happens on close)
+                GUI:ApplyAccentColor(r, g, b)
+                accentSwatch:SetBackdropColor(r, g, b, 1)
+                title:SetTextColor(C.accentLight[1], C.accentLight[2], C.accentLight[3], 1)
+                version:SetTextColor(C.accentLight[1], C.accentLight[2], C.accentLight[3], 1)
+            end,
+            cancelFunc = function(prev)
+                local r, g, b = prev.r, prev.g, prev.b
+                db.addonAccentColor = {r, g, b, 1}
+                GUI:ApplyAccentColor(r, g, b)
+            end,
+        })
+    end)
+
     -- Panel Scale (compact inline: label + editbox + slider)
-    local scaleContainer = CreateFrame("Frame", nil, frame)
+    local scaleContainer = CreateFrame("Frame", nil, titleBar)
     scaleContainer:SetSize(160, 20)
-    scaleContainer:SetPoint("CENTER", frame, "TOP", 0, -15)
+    scaleContainer:SetPoint("LEFT", classToggle, "RIGHT", 14, 0)
 
     local scaleLabel = scaleContainer:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     SetFont(scaleLabel, 10, "", C.textMuted)
@@ -3494,7 +3697,7 @@ function GUI:CreateMainFrame()
     scaleSlider:EnableMouse(true)
     scaleSlider:SetBackdrop({bgFile = "Interface\\Buttons\\WHITE8x8"})
     scaleSlider:SetBackdropColor(0.22, 0.22, 0.22, 0.9)
-    local thumb = scaleSlider:CreateTexture(nil, "OVERLAY")
+    thumb = scaleSlider:CreateTexture(nil, "OVERLAY")
     thumb:SetSize(8, 14)
     thumb:SetColorTexture(C.accent[1], C.accent[2], C.accent[3], 1)
     scaleSlider:SetThumbTexture(thumb)
@@ -3663,17 +3866,17 @@ function GUI:CreateMainFrame()
     local gripTexture = resizeHandle:CreateTexture(nil, "OVERLAY")
     gripTexture:SetAllPoints()
     gripTexture:SetTexture("Interface\\ChatFrame\\UI-ChatIM-SizeGrabber-Up")
-    gripTexture:SetVertexColor(0.6, 0.8, 0.7, 0.8)
+    gripTexture:SetVertexColor(C.accentDark[1] + 0.3, C.accentDark[2] + 0.3, C.accentDark[3] + 0.3, 0.8)
 
     local gripHighlight = resizeHandle:CreateTexture(nil, "HIGHLIGHT")
     gripHighlight:SetAllPoints()
     gripHighlight:SetTexture("Interface\\ChatFrame\\UI-ChatIM-SizeGrabber-Highlight")
-    gripHighlight:SetVertexColor(0.2, 0.82, 0.6, 1)
+    gripHighlight:SetVertexColor(C.accent[1], C.accent[2], C.accent[3], 1)
 
     local gripPushed = resizeHandle:CreateTexture(nil, "ARTWORK")
     gripPushed:SetAllPoints()
     gripPushed:SetTexture("Interface\\ChatFrame\\UI-ChatIM-SizeGrabber-Down")
-    gripPushed:SetVertexColor(0.2, 0.82, 0.6, 1)
+    gripPushed:SetVertexColor(C.accent[1], C.accent[2], C.accent[3], 1)
     gripPushed:Hide()
 
     resizeHandle:SetScript("OnMouseDown", function(self, button)
@@ -3841,7 +4044,7 @@ function GUI:AddActionButton(frame, name, onClick, accentColor)
     btn.name = name
     btn.isActionButton = true
 
-    local borderColor = {0.2, 0.82, 0.6, 1}  -- Mint/teal accent
+    local borderColor = {C.accent[1], C.accent[2], C.accent[3], 1}
     btn.borderColor = borderColor
     btn.bgColor = {0.05, 0.08, 0.12, 1}
 
@@ -3878,7 +4081,7 @@ function GUI:AddActionButton(frame, name, onClick, accentColor)
 
     btn:SetScript("OnEnter", function(self)
         self.hoverBg:Show()
-        self.text:SetTextColor(0.4, 1, 0.8, 1)
+        self.text:SetTextColor(C.accentHover[1], C.accentHover[2], C.accentHover[3], 1)
     end)
 
     btn:SetScript("OnLeave", function(self)
@@ -4008,6 +4211,39 @@ end
 function GUI:Hide()
     if self.MainFrame then
         self.MainFrame:Hide()
+    end
+end
+
+---------------------------------------------------------------------------
+-- REFRESH ACCENT COLOR (Rebuilds the panel to pick up new theme colors)
+---------------------------------------------------------------------------
+function GUI:RefreshAccentColor()
+    if not self.MainFrame then return end
+    -- Save current state
+    local savedTab = self.MainFrame.activeTab or 1
+    local wasShown = self.MainFrame:IsShown()
+
+    -- Tear down old frame
+    self.MainFrame:Hide()
+    self.MainFrame:SetParent(nil)
+    self.MainFrame = nil
+
+    -- Reset search index state (will be rebuilt from dedup keys)
+    self._searchIndexBuilt = false
+    self._allTabsAdded = false
+    self.SettingsRegistry = {}
+    self.SettingsRegistryKeys = {}
+
+    -- Recreate
+    self:InitializeOptions()
+
+    -- Restore tab
+    if savedTab and self.MainFrame then
+        GUI:SelectTab(self.MainFrame, savedTab)
+    end
+
+    if wasShown and self.MainFrame then
+        self.MainFrame:Show()
     end
 end
 

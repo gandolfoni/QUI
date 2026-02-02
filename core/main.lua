@@ -154,6 +154,7 @@ function QUICore:ImportProfileFromString(str)
     end
 
     local profile = self.db.profile
+
     for k in pairs(profile) do
         profile[k] = nil
     end
@@ -741,7 +742,6 @@ local defaults = {
             skinRollFrames = true,  -- Skin loot roll frames
             skinRollSpacing = 6,  -- Spacing between roll frames
             skinUseClassColor = true,  -- Use class color for skin accents
-            skinCustomColor = { 0.2, 1, 0.6, 1 },  -- Custom skin accent color
             -- QoL Automation
             sellJunk = true,
             autoRepair = "personal",      -- "off", "personal", "guild"
@@ -2905,6 +2905,9 @@ local defaults = {
         configPanelWidth = 750,
         configPanelAlpha = 0.97,
 
+        -- Addon Accent Color (drives options panel theme + default fallback for skinned elements)
+        addonAccentColor = {0.204, 0.827, 0.6, 1},  -- #34D399 Mint
+
         -- Combat Text Indicator
         combatText = {
             enabled = true,
@@ -3379,6 +3382,15 @@ function QUICore:OnInitialize()
     -- hideWhenNotInInstance=true → showInInstance=true (user wants instance-only)
     -- hideWhenMounted has no equivalent (can't express "hide when mounted" in SHOW logic)
     local profile = self.db.profile
+
+    -- Migrate legacy skin accent color into addonAccentColor
+    if profile.general and profile.general.skinCustomColor and not profile.general.addonAccentColor then
+        if type(profile.general.skinCustomColor) == "table" then
+            profile.general.addonAccentColor = { unpack(profile.general.skinCustomColor) }
+        else
+            profile.general.addonAccentColor = profile.general.skinCustomColor
+        end
+    end
 
     -- Helper to migrate a visibility table from HIDE to SHOW logic
     local function migrateToShowLogic(visTable)
@@ -4899,6 +4911,15 @@ function QUI:GetGlobalTexture()
     return LSM:Fetch("statusbar", textureName) or "Interface\\AddOns\\QUI\\assets\\Quazii"
 end
 
+function QUI:GetAddonAccentColor()
+    local db = QUI.db and QUI.db.profile
+    if not db or not db.general then
+        return 0.204, 0.827, 0.6, 1  -- Fallback to mint
+    end
+    local c = db.general.addonAccentColor or {0.204, 0.827, 0.6, 1}
+    return c[1], c[2], c[3], c[4] or 1
+end
+
 function QUI:GetSkinColor()
     local db = QUI.db and QUI.db.profile
     if not db or not db.general then
@@ -4913,7 +4934,7 @@ function QUI:GetSkinColor()
         end
     end
 
-    local c = db.general.skinCustomColor or {0.2, 1.0, 0.6, 1}
+    local c = db.general.addonAccentColor or {0.204, 0.827, 0.6, 1}
     return c[1], c[2], c[3], c[4] or 1
 end
 
