@@ -128,7 +128,9 @@ local function StripBlizzardOverlay(icon)
             if ok and atlas == "UI-HUD-CoolDownManager-IconOverlay" then
                 region:SetTexture("")
                 region:Hide()
-                region.Show = function() end
+                hooksecurefunc(region, "Show", function(self)
+                    self:Hide()
+                end)
             end
         end
     end
