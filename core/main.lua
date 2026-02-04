@@ -879,6 +879,11 @@ local defaults = {
             enabled = true,           -- Skin GroupLootHistoryFrame
         },
 
+        -- Keybind Overrides (spell/item ID → custom keybind text, shared across viewers)
+        keybindOverrides = {},
+        keybindOverridesEnabledCDM = true,
+        keybindOverridesEnabledTrackers = true,
+
         -- FPS Settings Backup (stores user's CVars before applying Quazii's settings)
         fpsBackup = nil,
 

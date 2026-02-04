@@ -63,6 +63,55 @@ local Helpers = QUI.Helpers
 local GetGeneralFont = Helpers.GetGeneralFont
 local GetGeneralFontOutline = Helpers.GetGeneralFontOutline
 
+-- Helper: get viewer settings safely
+local function GetViewerSettings(viewerName)
+    local QUICore = _G.QUI and _G.QUI.QUICore
+    if not QUICore or not QUICore.db or not QUICore.db.profile then return nil end
+    local viewers = QUICore.db.profile.viewers
+    if not viewers then return nil end
+    return viewers[viewerName]
+end
+
+-- Helper: get shared keybind overrides from DB (shared across all viewers)
+local function GetSharedOverrides()
+    local QUICore = _G.QUI and _G.QUI.QUICore
+    if not QUICore or not QUICore.db or not QUICore.db.profile then return nil end
+    return QUICore.db.profile.keybindOverrides
+end
+
+-- Helper: get an override keybind, if any, for a given spell/baseSpell (shared across viewers)
+local function GetOverrideKeybind(spellID, baseSpellID, spellName)
+    local overrides = GetSharedOverrides()
+    if not overrides then return nil end
+
+    -- Prefer explicit base spell override, then direct spellID
+    if baseSpellID and overrides[baseSpellID] and overrides[baseSpellID] ~= "" then
+        return overrides[baseSpellID]
+    end
+
+    if spellID and overrides[spellID] and overrides[spellID] ~= "" then
+        return overrides[spellID]
+    end
+
+    return nil
+end
+
+-- Helper: get an override keybind for an item (shared across viewers)
+-- Uses negative itemID as key (since spellIDs are always positive)
+local function GetOverrideKeybindForItem(itemID)
+    if not itemID then return nil end
+    local overrides = GetSharedOverrides()
+    if not overrides then return nil end
+    
+    -- Use negative itemID as key to avoid conflicts with spellIDs
+    local key = -tonumber(itemID)
+    if overrides[key] and overrides[key] ~= "" then
+        return overrides[key]
+    end
+    
+    return nil
+end
+
 -- Format keybind text for display (shorten modifiers, max 4 chars)
 local function FormatKeybind(keybind)
     if not keybind then return nil end
@@ -807,10 +856,10 @@ end
 
 -- Apply keybind text to a cooldown icon
 local function ApplyKeybindToIcon(icon, viewerName)
-    local core = GetCore()
-    if not core or not core.db or not core.db.profile then return end
-    
-    local settings = core.db.profile.viewers[viewerName]
+    local QUICore = _G.QUI and _G.QUI.QUICore
+    if not QUICore or not QUICore.db or not QUICore.db.profile then return end
+
+    local settings = GetViewerSettings(viewerName)
     if not settings then return end
     
     -- Check if keybinds should be shown
@@ -867,45 +916,82 @@ local function ApplyKeybindToIcon(icon, viewerName)
         end
     end)
     
-    -- Get keybind for this spell (try ID first, then name, then BASE spell)
+    -- Get keybind for this spell:
+    -- 1) User override (by baseSpellID / spellID)
+    -- 2) Auto-detected cache by ID/base
+    -- 3) Auto-detected cache by spell name (macro fallback)
     local keybind = nil
     local baseSpellID = nil
-    
-    if spellID then
+
+    -- Step 1: explicit user override, if configured
+    local overrideKeybind = nil
+    local cdmOverridesEnabled = true
+    local QUICore_ref = _G.QUI and _G.QUI.QUICore
+    if QUICore_ref and QUICore_ref.db and QUICore_ref.db.profile then
+        cdmOverridesEnabled = QUICore_ref.db.profile.keybindOverridesEnabledCDM ~= false
+    end
+    if cdmOverridesEnabled then
+        overrideKeybind = GetOverrideKeybind(spellID, nil, spellName)
+    end
+    if overrideKeybind then
+        keybind = overrideKeybind
+    end
+
+    -- Step 2: auto-detection via cache (spellID / base spell)
+    if not keybind and spellID then
         keybind = GetKeybindForSpell(spellID)
-        
-        -- If no keybind found, try the BASE spell from cooldownInfo
+    end
+
+    -- If no keybind found yet, try base spell sources
+    if not keybind and spellID then
+        -- Try the BASE spell from cooldownInfo
         -- (CDM icons store the base spell ID even when showing evolved form)
-        if not keybind and icon.cooldownInfo and icon.cooldownInfo.spellID then
+        if icon.cooldownInfo and icon.cooldownInfo.spellID then
             local baseFromInfo = icon.cooldownInfo.spellID
             -- Use pcall for comparison since spellID may be a secret value
             local compareOk, isDifferent = pcall(function() return baseFromInfo ~= spellID end)
             if compareOk and isDifferent then
-                keybind = GetKeybindForSpell(baseFromInfo)
-                if keybind then baseSpellID = baseFromInfo end
-            end
-        end
-
-        -- Try C_Spell.GetBaseSpell API (evolved → base lookup)
-        -- e.g., Raze → Ravage, Thunder Blast → Thunder Clap
-        if not keybind and C_Spell.GetBaseSpell then
-            local ok, result = pcall(C_Spell.GetBaseSpell, spellID)
-            if ok and result then
-                -- Use pcall for comparison since spellID may be a secret value
-                local compareOk, isDifferent = pcall(function() return result ~= spellID end)
-                if compareOk and isDifferent then
-                    baseSpellID = result
+                baseSpellID = baseFromInfo
+                -- Re-check for explicit override on base spell
+                if cdmOverridesEnabled then
+                    overrideKeybind = GetOverrideKeybind(spellID, baseSpellID, spellName)
+                end
+                if overrideKeybind then
+                    keybind = overrideKeybind
+                else
                     keybind = GetKeybindForSpell(baseSpellID)
                 end
             end
         end
     end
-    
-    -- Fallback: try matching by spell name (important for macros)
+
+    -- Try C_Spell.GetBaseSpell API (evolved → base lookup)
+    -- e.g., Raze → Ravage, Thunder Blast → Thunder Clap
+    if not keybind and spellID and C_Spell.GetBaseSpell then
+        local okBase, resultBase = pcall(C_Spell.GetBaseSpell, spellID)
+        if okBase and resultBase then
+            -- Use pcall for comparison since spellID may be a secret value
+            local compareOk, isDifferent = pcall(function() return resultBase ~= spellID end)
+            if compareOk and isDifferent then
+                baseSpellID = resultBase
+                -- Re-check override for this base spell
+                if cdmOverridesEnabled then
+                    overrideKeybind = GetOverrideKeybind(spellID, baseSpellID, spellName)
+                end
+                if overrideKeybind then
+                    keybind = overrideKeybind
+                else
+                    keybind = GetKeybindForSpell(baseSpellID)
+                end
+            end
+        end
+    end
+
+    -- Step 3: fallback to name-based cache (important for macros)
     if not keybind and spellName then
         keybind = GetKeybindForSpellName(spellName)
     end
-    
+
     -- Debug output
     local debugSpellName = "?"
     pcall(function() debugSpellName = spellName or "?" end)
@@ -963,6 +1049,107 @@ local function ApplyKeybindToIcon(icon, viewerName)
     else
         icon.keybindText:SetText("")
         icon.keybindText:Hide()
+    end
+end
+
+-- Override management API ----------------------------------------------------
+
+-- Set or clear a keybind override for a spellID (shared across all viewers).
+local function SetKeybindOverride(spellID, keybindText)
+    if not spellID then return end
+    
+    -- Ensure spellID is a number (convert from string if needed)
+    spellID = tonumber(spellID)
+    if not spellID or spellID <= 0 then return end
+
+    local QUICore = _G.QUI and _G.QUI.QUICore
+    if not QUICore or not QUICore.db or not QUICore.db.profile then return end
+
+    -- Initialize shared overrides table if needed
+    if not QUICore.db.profile.keybindOverrides then
+        QUICore.db.profile.keybindOverrides = {}
+    end
+
+    local overrides = QUICore.db.profile.keybindOverrides
+
+    if keybindText == nil then
+        -- Explicitly remove override (user clicked X)
+        overrides[spellID] = nil
+    else
+        -- Store exactly what the user wants to see (no auto-formatting)
+        -- Empty string "" is allowed - it means "added to list but no binding set yet"
+        overrides[spellID] = keybindText
+    end
+
+    -- Immediately refresh CDM keybinds to reflect changes
+    if _G.QUI_RefreshKeybinds then
+        _G.QUI_RefreshKeybinds()
+    else
+        -- Fallback: direct update if global refresh not yet defined
+        UpdateAllKeybinds()
+    end
+    
+    -- Also refresh custom tracker keybinds (in case spell is also tracked there)
+    if _G.QUI_RefreshCustomTrackerKeybinds then
+        _G.QUI_RefreshCustomTrackerKeybinds()
+    end
+end
+
+local function ClearAllKeybindOverrides()
+    local overrides = GetSharedOverrides()
+    if not overrides then return end
+
+    wipe(overrides)
+
+    if _G.QUI_RefreshKeybinds then
+        _G.QUI_RefreshKeybinds()
+    else
+        UpdateAllKeybinds()
+    end
+    
+    -- Also refresh custom tracker keybinds
+    if _G.QUI_RefreshCustomTrackerKeybinds then
+        _G.QUI_RefreshCustomTrackerKeybinds()
+    end
+end
+
+-- Set or clear a keybind override for an itemID (shared across all viewers)
+-- Uses negative itemID as key to avoid conflicts with spellIDs
+local function SetKeybindOverrideForItem(itemID, keybindText)
+    if not itemID then return end
+    
+    -- Ensure itemID is a number (convert from string if needed)
+    itemID = tonumber(itemID)
+    if not itemID or itemID <= 0 then return end
+
+    local QUICore = _G.QUI and _G.QUI.QUICore
+    if not QUICore or not QUICore.db or not QUICore.db.profile then return end
+
+    -- Initialize shared overrides table if needed
+    if not QUICore.db.profile.keybindOverrides then
+        QUICore.db.profile.keybindOverrides = {}
+    end
+
+    local overrides = QUICore.db.profile.keybindOverrides
+    local key = -itemID -- Use negative itemID as key
+
+    if keybindText == nil then
+        -- Explicitly remove override
+        overrides[key] = nil
+    else
+        -- Store exactly what the user wants to see (no auto-formatting)
+        -- Empty string "" is allowed - it means "added to list but no binding set yet"
+        overrides[key] = keybindText
+    end
+
+    -- Immediately refresh custom tracker keybinds to reflect changes
+    if _G.QUI_RefreshCustomTrackerKeybinds then
+        _G.QUI_RefreshCustomTrackerKeybinds()
+    end
+    
+    -- Also refresh CDM keybinds (in case there are any spell overrides)
+    if _G.QUI_RefreshKeybinds then
+        _G.QUI_RefreshKeybinds()
     end
 end
 
@@ -1854,8 +2041,13 @@ QUI.Keybinds = {
     GetKeybindForSpellName = GetKeybindForSpellName,
     GetKeybindForItem = GetKeybindForItem,
     GetKeybindForItemName = GetKeybindForItemName,
+    GetOverrides = GetSharedOverrides,
     RebuildCache = RebuildCache,
     DebugPrintCache = DebugPrintCache,
+    SetOverride = SetKeybindOverride,
+    SetOverrideForItem = SetKeybindOverrideForItem,
+    GetOverrideForItem = GetOverrideKeybindForItem,
+    ClearAllOverrides = ClearAllKeybindOverrides,
     RefreshRotationHelper = RefreshRotationHelper,
     UpdateAllRotationHelpers = UpdateAllRotationHelpers,
 }

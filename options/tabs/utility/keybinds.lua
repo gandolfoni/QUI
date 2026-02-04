@@ -11,6 +11,16 @@ local C = GUI.Colors
 -- Import shared utilities
 local Shared = ns.QUI_Options
 
+-- Persistent event listener for item info loading (created once, callback updated per tab build)
+local itemInfoListener = CreateFrame("Frame")
+itemInfoListener:RegisterEvent("GET_ITEM_INFO_RECEIVED")
+local itemInfoListenerCallback = nil
+itemInfoListener:SetScript("OnEvent", function(self, event, itemID)
+    if event == "GET_ITEM_INFO_RECEIVED" and itemID and itemInfoListenerCallback then
+        itemInfoListenerCallback(itemID)
+    end
+end)
+
 local ANCHOR_OPTIONS = {
     { value = "TOPLEFT", text = "Top Left" },
     { value = "TOPRIGHT", text = "Top Right" },
@@ -182,6 +192,430 @@ local function BuildKeybindsTab(tabContent)
             ctOffsetYSlider:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
             y = y - FORM_ROW
         end
+
+        -- =====================================================
+        -- KEYBIND OVERRIDES (SPELL ID → CUSTOM TEXT)
+        -- =====================================================
+        y = y - 10 -- Section spacing
+        local overrideHeader = GUI:CreateSectionHeader(tabContent, "KEYBIND TEXT OVERRIDES")
+        overrideHeader:SetPoint("TOPLEFT", PAD, y)
+        y = y - overrideHeader.gap
+
+        local overrideInfo = GUI:CreateLabel(tabContent, "Override the auto-detected keybind text for specific spells and items. Drag spells from your spellbook or items from your bags into the box below.", 11, C.textMuted)
+        overrideInfo:SetPoint("TOPLEFT", PAD, y)
+        overrideInfo:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
+        overrideInfo:SetJustifyH("LEFT")
+        y = y - 32
+
+        -- Get shared overrides from DB
+        local QUICore = _G.QUI and _G.QUI.QUICore
+        if not QUICore or not QUICore.db or not QUICore.db.profile then
+            local noDataLabel = GUI:CreateLabel(tabContent, "Database not available", 12, C.textMuted)
+            noDataLabel:SetPoint("TOPLEFT", PAD, y)
+            y = y - 24
+        else
+            -- Initialize if needed
+            if not QUICore.db.profile.keybindOverrides then
+                QUICore.db.profile.keybindOverrides = {}
+            end
+
+            -- Enable toggle: CDM overrides
+            local cdmToggle = GUI:CreateFormCheckbox(tabContent, "Enable for CDM", "keybindOverridesEnabledCDM", QUICore.db.profile, function()
+                if _G.QUI_RefreshKeybinds then
+                    _G.QUI_RefreshKeybinds()
+                end
+            end)
+            cdmToggle:SetPoint("TOPLEFT", PAD, y)
+            cdmToggle:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
+            y = y - FORM_ROW
+
+            -- Enable toggle: Custom Trackers overrides
+            local trackersToggle = GUI:CreateFormCheckbox(tabContent, "Enable for Custom Trackers", "keybindOverridesEnabledTrackers", QUICore.db.profile, function()
+                if _G.QUI_RefreshCustomTrackerKeybinds then
+                    _G.QUI_RefreshCustomTrackerKeybinds()
+                end
+            end)
+            trackersToggle:SetPoint("TOPLEFT", PAD, y)
+            trackersToggle:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
+            y = y - FORM_ROW
+
+            -- Refresh both CDM and Custom Tracker keybind displays
+            local function RefreshAllKeybindDisplays()
+                if _G.QUI_RefreshKeybinds then
+                    _G.QUI_RefreshKeybinds()
+                end
+                if _G.QUI_RefreshCustomTrackerKeybinds then
+                    _G.QUI_RefreshCustomTrackerKeybinds()
+                end
+            end
+
+            -- Helper function to save/update override
+            -- If keybindText is nil, it means "remove override" (user clicked X)
+            -- If keybindText is a string (even empty ""), it means "set this binding"
+            local function SaveOverride(spellID, keybindText)
+                if not spellID or spellID <= 0 then return false end
+
+                if QUI and QUI.Keybinds and QUI.Keybinds.SetOverride then
+                    QUI.Keybinds.SetOverride(spellID, keybindText)
+                    return true
+                end
+
+                -- Direct DB access fallback
+                QUICore.db.profile.keybindOverrides = QUICore.db.profile.keybindOverrides or {}
+                if keybindText == nil then
+                    QUICore.db.profile.keybindOverrides[spellID] = nil
+                else
+                    QUICore.db.profile.keybindOverrides[spellID] = keybindText
+                end
+                RefreshAllKeybindDisplays()
+                return true
+            end
+
+            -- Entry list frame (will be created below)
+            local entryListFrame = nil
+            local entryFrames = {} -- Track created frames for proper cleanup
+
+            -- Function to refresh override list
+            local function RefreshOverrideList()
+                if not entryListFrame then return end
+
+                -- Hide all existing frames
+                for i, frame in ipairs(entryFrames) do
+                    if frame then frame:Hide() end
+                end
+                wipe(entryFrames)
+
+                local overrides = QUICore.db.profile.keybindOverrides
+                if not overrides then return end
+
+                -- Convert to sorted array for display (show ALL spells and items in overrides table, even with empty binding)
+                -- Items use negative keys, spells use positive keys
+                local entries = {}
+                for key, keybindText in pairs(overrides) do
+                    local entryType = (key < 0) and "item" or "spell"
+                    local id = (key < 0) and -key or key
+                    table.insert(entries, {key = key, id = id, type = entryType, keybindText = keybindText or ""})
+                end
+                -- Sort: items first (negative keys), then spells (positive keys)
+                table.sort(entries, function(a, b)
+                    if a.type ~= b.type then
+                        return a.type == "item" -- Items first
+                    end
+                    return a.id < b.id
+                end)
+
+                local listY = 0
+                for i, entry in ipairs(entries) do
+                    local entryFrame = CreateFrame("Frame", nil, entryListFrame)
+                    entryFrame:SetSize(400, 28)
+                    entryFrame:SetPoint("TOPLEFT", 0, listY)
+                    entryFrame:Show()
+                    entryFrames[i] = entryFrame
+
+                    -- Icon
+                    local iconTex = entryFrame:CreateTexture(nil, "ARTWORK")
+                    iconTex:SetSize(24, 24)
+                    iconTex:SetPoint("LEFT", 0, 0)
+                    local displayName = ""
+                    local iconID = nil
+                    
+                    if entry.type == "spell" then
+                        local spellInfo = C_Spell.GetSpellInfo(entry.id)
+                        iconID = spellInfo and spellInfo.iconID
+                        displayName = spellInfo and spellInfo.name or ("Spell " .. tostring(entry.id))
+                    else -- item
+                        -- C_Item.GetItemInfo returns multiple values, not an object
+                        local itemName, _, _, _, _, _, _, _, _, itemIcon = C_Item.GetItemInfo(entry.id)
+                        if itemName then
+                            iconID = itemIcon
+                            displayName = itemName
+                        else
+                            -- Item not cached yet, request it
+                            C_Item.RequestLoadItemDataByID(entry.id)
+                            iconID = nil
+                            displayName = "Item " .. tostring(entry.id)
+                        end
+                    end
+                    
+                    iconTex:SetTexture(iconID or "Interface\\Icons\\INV_Misc_QuestionMark")
+                    iconTex:SetTexCoord(0.08, 0.92, 0.08, 0.92)
+
+                    -- Name and ID label (shows both name and ID, with type prefix)
+                    local nameLabel = entryFrame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+                    nameLabel:SetPoint("LEFT", iconTex, "RIGHT", 6, 0)
+                    local typePrefix = (entry.type == "item") and "Item" or "Spell"
+                    nameLabel:SetText(string.format("%s: %s (%d)", typePrefix, displayName, entry.id))
+                    nameLabel:SetTextColor(C.text[1], C.text[2], C.text[3], 1)
+                    nameLabel:SetWidth(200)
+
+                    -- Keybind text input box
+                    local keybindInputBg = CreateFrame("Frame", nil, entryFrame, "BackdropTemplate")
+                    keybindInputBg:SetPoint("LEFT", nameLabel, "RIGHT", 6, 0)
+                    keybindInputBg:SetSize(100, 22)
+                    keybindInputBg:SetBackdrop({
+                        bgFile = "Interface\\Buttons\\WHITE8x8",
+                        edgeFile = "Interface\\Buttons\\WHITE8x8",
+                        edgeSize = 1,
+                    })
+                    keybindInputBg:SetBackdropColor(0.05, 0.05, 0.05, 0.4)
+                    keybindInputBg:SetBackdropBorderColor(0.25, 0.25, 0.25, 0.6)
+
+                    local keybindInput = CreateFrame("EditBox", nil, keybindInputBg)
+                    keybindInput:SetPoint("LEFT", 6, 0)
+                    keybindInput:SetPoint("RIGHT", -6, 0)
+                    keybindInput:SetHeight(20)
+                    keybindInput:SetAutoFocus(false)
+                    keybindInput:SetFont(GUI.FONT_PATH, 11, "")
+                    keybindInput:SetTextColor(C.text[1], C.text[2], C.text[3], 1)
+                    keybindInput:SetText(entry.keybindText or "")
+                    keybindInput:SetCursorPosition(0)
+                    keybindInput.entryKey = entry.key -- Store the key (positive for spells, negative for items)
+                    keybindInput.entryType = entry.type
+                    keybindInput.entryID = entry.id
+
+                    keybindInput:SetScript("OnEscapePressed", function(self)
+                        self:SetText(entry.keybindText or "")
+                        self:ClearFocus()
+                    end)
+
+                    keybindInput:SetScript("OnEditFocusGained", function(self)
+                        keybindInputBg:SetBackdropBorderColor(C.accent[1], C.accent[2], C.accent[3], 1)
+                        self:HighlightText()
+                    end)
+                    keybindInput:SetScript("OnEditFocusLost", function(self)
+                        keybindInputBg:SetBackdropBorderColor(0.25, 0.25, 0.25, 0.6)
+                    end)
+
+                    -- Save button for this entry (forward-declared for OnEnterPressed)
+                    local saveBtn
+                    saveBtn = GUI:CreateButton(entryFrame, "Save", 50, 22, function()
+                        local newKeybindText = keybindInput:GetText() or ""
+                        local saved = false
+                        if entry.type == "spell" then
+                            saved = SaveOverride(entry.id, newKeybindText)
+                        else -- item
+                            if QUI and QUI.Keybinds and QUI.Keybinds.SetOverrideForItem then
+                                QUI.Keybinds.SetOverrideForItem(entry.id, newKeybindText)
+                                saved = true
+                            else
+                                -- Direct DB access fallback
+                                QUICore.db.profile.keybindOverrides = QUICore.db.profile.keybindOverrides or {}
+                                QUICore.db.profile.keybindOverrides[-entry.id] = newKeybindText
+                                saved = true
+                                RefreshAllKeybindDisplays()
+                            end
+                        end
+                        if saved then
+                            entry.keybindText = newKeybindText
+                            keybindInput:ClearFocus()
+                            RefreshOverrideList()
+                        end
+                    end)
+                    saveBtn:SetPoint("LEFT", keybindInputBg, "RIGHT", 6, 0)
+
+                    -- Save on Enter key
+                    keybindInput:SetScript("OnEnterPressed", function(self)
+                        saveBtn:Click()
+                    end)
+
+                    -- Remove button (X)
+                    local removeBtn = CreateFrame("Button", nil, entryFrame, "BackdropTemplate")
+                    removeBtn:SetSize(22, 22)
+                    removeBtn:SetBackdrop({
+                        bgFile = "Interface\\Buttons\\WHITE8x8",
+                        edgeFile = "Interface\\Buttons\\WHITE8x8",
+                        edgeSize = 1,
+                    })
+                    removeBtn:SetBackdropColor(0.1, 0.1, 0.1, 0.8)
+                    removeBtn:SetBackdropBorderColor(0.3, 0.3, 0.3, 1)
+                    local xText = removeBtn:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+                    xText:SetPoint("CENTER", 0, 0)
+                    xText:SetText("X")
+                    xText:SetTextColor(C.accent[1], C.accent[2], C.accent[3], 0.7)
+                    removeBtn:SetScript("OnEnter", function(self)
+                        self:SetBackdropBorderColor(C.accent[1], C.accent[2], C.accent[3], 1)
+                        xText:SetTextColor(C.accent[1], C.accent[2], C.accent[3], 1)
+                    end)
+                    removeBtn:SetScript("OnLeave", function(self)
+                        self:SetBackdropBorderColor(0.3, 0.3, 0.3, 1)
+                        xText:SetTextColor(C.accent[1], C.accent[2], C.accent[3], 0.7)
+                    end)
+                    removeBtn:SetScript("OnClick", function()
+                        -- Pass nil to explicitly remove the override
+                        local removed = false
+                        if entry.type == "spell" then
+                            removed = SaveOverride(entry.id, nil)
+                        else -- item
+                            if QUI and QUI.Keybinds and QUI.Keybinds.SetOverrideForItem then
+                                QUI.Keybinds.SetOverrideForItem(entry.id, nil)
+                                removed = true
+                            else
+                                -- Direct DB access fallback
+                                QUICore.db.profile.keybindOverrides = QUICore.db.profile.keybindOverrides or {}
+                                QUICore.db.profile.keybindOverrides[-entry.id] = nil
+                                removed = true
+                                RefreshAllKeybindDisplays()
+                            end
+                        end
+                        if removed then
+                            RefreshOverrideList()
+                        end
+                    end)
+                    removeBtn:SetPoint("LEFT", saveBtn, "RIGHT", 4, 0)
+
+                    listY = listY - 30
+                end
+
+                -- Update entry list frame height and ensure it's visible
+                local listHeight = math.max(20, math.abs(listY))
+                entryListFrame:SetHeight(listHeight)
+                entryListFrame:Show()
+            end
+
+            -- Helper: Create drop zone for adding spells via drag-and-drop
+            local function CreateDropZone(parentFrame, refreshCallback)
+                local container = CreateFrame("Frame", nil, parentFrame)
+                container:SetHeight(68)
+
+                local dropZone = CreateFrame("Button", nil, container, "BackdropTemplate")
+                dropZone:SetHeight(68)
+                dropZone:SetPoint("TOPLEFT", 0, 0)
+                dropZone:SetPoint("RIGHT", container, "RIGHT", 0, 0)
+                dropZone:SetBackdrop({
+                    bgFile = "Interface\\Buttons\\WHITE8x8",
+                    edgeFile = "Interface\\Buttons\\WHITE8x8",
+                    edgeSize = 1,
+                })
+                dropZone:SetBackdropColor(C.bg[1], C.bg[2], C.bg[3], 0.8)
+                dropZone:SetBackdropBorderColor(C.accent[1], C.accent[2], C.accent[3], 0.5)
+                
+                -- Enable receiving drags
+                dropZone:RegisterForDrag("LeftButton")
+                dropZone:EnableMouse(true)
+
+                local dropLabel = dropZone:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+                dropLabel:SetPoint("CENTER", 0, 0)
+                dropLabel:SetText("Drop Spells or Items here")
+                dropLabel:SetTextColor(C.textMuted[1], C.textMuted[2], C.textMuted[3], 1)
+
+                -- Helper function to handle spell/item drop
+                local function HandleDrop()
+                    local cursorType, id1, id2, id3, id4 = GetCursorInfo()
+                    
+                    if cursorType == "spell" then
+                        local slotIndex = id1
+                        local bookType = id2 or "spell"
+                        local spellID = id4
+
+                        if not spellID and slotIndex then
+                            local spellBank = (bookType == "pet") and Enum.SpellBookSpellBank.Pet or Enum.SpellBookSpellBank.Player
+                            local spellBookInfo = C_SpellBook.GetSpellBookItemInfo(slotIndex, spellBank)
+                            if spellBookInfo then
+                                spellID = spellBookInfo.spellID
+                            end
+                        end
+
+                        if spellID then
+                            local overrideID = C_Spell.GetOverrideSpell(spellID)
+                            if overrideID and overrideID ~= spellID then
+                                spellID = overrideID
+                            end
+                            
+                            -- Add to overrides (with empty keybind text initially - store directly to show in list)
+                            QUICore.db.profile.keybindOverrides = QUICore.db.profile.keybindOverrides or {}
+                            QUICore.db.profile.keybindOverrides[spellID] = ""
+                            ClearCursor()
+                            
+                            -- Refresh the list immediately
+                            if refreshCallback then
+                                refreshCallback()
+                            end
+                            
+                            -- Also trigger keybind refresh
+                            if _G.QUI_RefreshKeybinds then
+                                _G.QUI_RefreshKeybinds()
+                            end
+                        end
+                    elseif cursorType == "item" then
+                        local itemID = id1
+                        if itemID then
+                            -- Add to overrides using negative itemID as key
+                            QUICore.db.profile.keybindOverrides = QUICore.db.profile.keybindOverrides or {}
+                            QUICore.db.profile.keybindOverrides[-itemID] = ""
+                            ClearCursor()
+                            
+                            -- Refresh the list immediately
+                            if refreshCallback then
+                                refreshCallback()
+                            end
+                            
+                            -- Also trigger custom tracker keybind refresh
+                            if _G.QUI_RefreshCustomTrackerKeybinds then
+                                _G.QUI_RefreshCustomTrackerKeybinds()
+                            end
+                        end
+                    end
+                end
+
+                -- Handle drop on mouse release
+                dropZone:SetScript("OnReceiveDrag", function(self)
+                    HandleDrop()
+                end)
+                
+                -- Also handle OnMouseUp as fallback (some drag modes use this)
+                dropZone:SetScript("OnMouseUp", function(self)
+                    local cursorType = GetCursorInfo()
+                    if cursorType == "spell" or cursorType == "item" then
+                        HandleDrop()
+                    end
+                end)
+                
+                -- Highlight on hover when cursor has spell or item
+                dropZone:SetScript("OnEnter", function(self)
+                    local cursorType = GetCursorInfo()
+                    if cursorType == "spell" or cursorType == "item" then
+                        self:SetBackdropBorderColor(C.accent[1], C.accent[2], C.accent[3], 1)
+                        dropLabel:SetTextColor(C.accent[1], C.accent[2], C.accent[3], 1)
+                    end
+                end)
+                dropZone:SetScript("OnLeave", function(self)
+                    self:SetBackdropBorderColor(C.accent[1], C.accent[2], C.accent[3], 0.5)
+                    dropLabel:SetTextColor(C.textMuted[1], C.textMuted[2], C.textMuted[3], 1)
+                end)
+
+                return container
+            end
+
+            -- Create drop zone
+            local dropSection = CreateDropZone(tabContent, RefreshOverrideList)
+            dropSection:SetPoint("TOPLEFT", PAD, y)
+            dropSection:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
+            y = y - 78
+
+            -- Overridden Keybind Spells section
+            local trackedHeader = GUI:CreateSectionHeader(tabContent, "Overridden Keybind Texts For Spells")
+            trackedHeader:SetPoint("TOPLEFT", dropSection, "BOTTOMLEFT", 0, -15)
+
+            -- Entry list container
+            entryListFrame = CreateFrame("Frame", nil, tabContent)
+            entryListFrame:SetPoint("TOPLEFT", trackedHeader, "BOTTOMLEFT", 0, -8)
+            entryListFrame:SetSize(400, 20)
+            
+            -- Update item info listener callback (frame is reused across tab builds)
+            itemInfoListenerCallback = function(itemID)
+                local overrides = QUICore.db.profile.keybindOverrides
+                if overrides and overrides[-itemID] then
+                    C_Timer.After(0.1, function()
+                        RefreshOverrideList()
+                    end)
+                end
+            end
+            
+            RefreshOverrideList()
+
+            y = y - 50 -- Space for header and initial list
+        end
+
     else
         y = y - 10
         local noDataLabel = GUI:CreateLabel(tabContent, "Keybind settings not available - database not loaded", 12, C.textMuted)
