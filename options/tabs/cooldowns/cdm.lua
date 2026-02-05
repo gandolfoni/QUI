@@ -1900,6 +1900,23 @@ local function CreateCDMSetupPage(parent)
         enableSecondary:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
         y = y - FORM_ROW
 
+        -- Visibility mode dropdowns
+        local visibilityOptions = {
+            {value = "always",  text = "Always"},
+            {value = "combat",  text = "In Combat"},
+            {value = "hostile", text = "Hostile Target"},
+        }
+
+        local visPrimary = GUI:CreateFormDropdown(tabContent, "Primary Visibility", visibilityOptions, "visibility", primary, RefreshPowerBars)
+        visPrimary:SetPoint("TOPLEFT", PAD, y)
+        visPrimary:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
+        y = y - FORM_ROW
+
+        local visSecondary = GUI:CreateFormDropdown(tabContent, "Secondary Visibility", visibilityOptions, "visibility", secondary, RefreshPowerBars)
+        visSecondary:SetPoint("TOPLEFT", PAD, y)
+        visSecondary:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
+        y = y - FORM_ROW
+
         -- Standalone toggles
         local standalonePrimary = GUI:CreateFormToggle(tabContent, "Primary Standalone Mode", "standaloneMode", primary, PromptResourceBarReload)
         standalonePrimary:SetPoint("TOPLEFT", PAD, y)
@@ -3391,6 +3408,7 @@ local function CreateCDMSetupPage(parent)
         -- Ensure all fields exist with defaults
         local primary = db.powerBar
         if primary.enabled == nil then primary.enabled = true end
+        if primary.visibility == nil then primary.visibility = "always" end
         if primary.autoAttach == nil then primary.autoAttach = true end
         if primary.width == nil then primary.width = 310 end
         if primary.height == nil then primary.height = 8 end
@@ -3414,6 +3432,7 @@ local function CreateCDMSetupPage(parent)
 
         local secondary = db.secondaryPowerBar
         if secondary.enabled == nil then secondary.enabled = true end
+        if secondary.visibility == nil then secondary.visibility = "always" end
         if secondary.autoAttach == nil then secondary.autoAttach = true end
         if secondary.width == nil then secondary.width = 310 end
         if secondary.height == nil then secondary.height = 8 end

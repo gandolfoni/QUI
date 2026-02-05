@@ -14,6 +14,17 @@ local function Scale(x, frame)
     return x
 end
 
+-- Visibility check for resource bars ("always", "combat", "hostile")
+local function ShouldShowBar(cfg)
+    local vis = cfg.visibility or "always"
+    if vis == "always" then return true end
+    if vis == "combat" then return InCombatLockdown() end
+    if vis == "hostile" then
+        return UnitExists("target") and UnitCanAttack("player", "target")
+    end
+    return true
+end
+
 -- Edit Mode state tracking for power bars
 local PowerBarEditMode = {
     active = false,
@@ -906,6 +917,12 @@ function QUICore:UpdatePowerBar()
     local resource = GetPrimaryResource()
 
     if not resource then
+        bar:Hide()
+        return
+    end
+
+    -- Visibility mode check (always/combat/hostile)
+    if not PowerBarEditMode.active and not ShouldShowBar(cfg) then
         bar:Hide()
         return
     end
@@ -1973,6 +1990,12 @@ function QUICore:UpdateSecondaryPowerBar()
         return
     end
 
+    -- Visibility mode check (always/combat/hostile)
+    if not PowerBarEditMode.active and not ShouldShowBar(cfg) then
+        bar:Hide()
+        return
+    end
+
     -- Update HUD layer priority dynamically
     local layerPriority = self.db.profile.hudLayering and self.db.profile.hudLayering.secondaryPowerBar or 6
     local frameLevel = self:GetHUDFrameLevel(layerPriority)
@@ -2578,6 +2601,9 @@ local function InitializeResourceBars(self)
     -- Ensures bars show correct values when entering/exiting combat
     self:RegisterEvent("PLAYER_REGEN_DISABLED", "OnUnitPower")
     self:RegisterEvent("PLAYER_REGEN_ENABLED", "OnUnitPower")
+
+    -- Target change - needed for visibility modes (hostile target, etc.)
+    self:RegisterEvent("PLAYER_TARGET_CHANGED", "OnUnitPower")
 
     -- Ensure Demon Hunter soul bar is spawned
     EnsureDemonHunterSoulBar()

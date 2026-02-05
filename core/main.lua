@@ -1276,6 +1276,7 @@ local defaults = {
             lockedToUtility   = false,  -- Auto-resize width when Utility CDM changes
             snapGap           = 5,      -- Gap when snapped to CDM
             orientation       = "HORIZONTAL",  -- Bar orientation
+            visibility        = "always",  -- "always", "combat", "hostile"
         },
         castBar = {
             enabled       = true,
@@ -1352,6 +1353,7 @@ local defaults = {
             lockedToPrimary   = true,   -- Position above + match Primary bar width
             snapGap       = 5,        -- Gap when snapped
             orientation   = "AUTO",   -- Bar orientation
+            visibility    = "always",  -- "always", "combat", "hostile"
             showFragmentedPowerBarText = false,  -- Show text on fragmented power bars
         },
         -- Power Colors (global, used by both Primary and Secondary power bars)
