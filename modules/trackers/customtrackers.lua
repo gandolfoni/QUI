@@ -960,6 +960,17 @@ local function ProcessPendingSecureUpdates()
                 if icon._pendingSecureUpdate then
                     UpdateIconSecureAttributes(icon, icon.entry, bar.config)
                 end
+                -- Sync Show/Hide for icons that used alpha fallback during combat
+                if icon.isVisible then
+                    if not icon:IsShown() then
+                        icon:Show()
+                        icon:SetAlpha(1)
+                    end
+                else
+                    if icon:IsShown() then
+                        icon:Hide()
+                    end
+                end
             end
         end
     end
@@ -1742,13 +1753,17 @@ function CustomTrackers:StartCooldownPolling(bar)
                 -- Base visibility (Hide Non-Usable)
                 local baseVisible = isUsable or (not hideNonUsable)
 
-                -- Combat visibility check (can combine with other options)
+                -- Combat visibility check (alpha-based, never drives Show/Hide
+                -- because icon frames may have SecureActionButton children
+                -- that make Show/Hide protected during combat lockdown)
                 local inCombat = UnitAffectingCombat("player")
                 local combatVisible = (not showOnlyInCombat) or inCombat
 
                 -- Dynamic layout visibility: icons truly hide and the bar collapses.
                 -- Static layout: icons may use alpha=0 to preserve fixed slots.
-                local layoutVisible = baseVisible and combatVisible
+                -- Note: combatVisible is NOT included here — it is handled via alpha
+                -- in the shouldRender section below to avoid protected-frame errors.
+                local layoutVisible = baseVisible
                 if layoutVisible then
                     if showOnlyWhenActive then
                         layoutVisible = isActive
@@ -1772,16 +1787,29 @@ function CustomTrackers:StartCooldownPolling(bar)
                     end
                 end
 
+                -- Combat-safe Show/Hide: icon frames may have a SecureActionButton
+                -- child (clickableIcons) that makes Show/Hide protected in combat.
+                -- Fall back to alpha-based visibility during combat lockdown.
+                local inCombatLockdown = InCombatLockdown()
+
                 if dynamicLayout then
                     -- Track visibility state change (affects layout)
                     if layoutVisible ~= icon.isVisible then
                         visibilityChanged = true
                         icon.isVisible = layoutVisible
                         if layoutVisible then
-                            icon:Show()
+                            if inCombatLockdown then
+                                icon:SetAlpha(1)
+                            else
+                                icon:Show()
+                            end
                         else
                             StopActiveGlow(icon)
-                            icon:Hide()
+                            if inCombatLockdown then
+                                icon:SetAlpha(0)
+                            else
+                                icon:Hide()
+                            end
                         end
                     end
                 else
@@ -1790,18 +1818,26 @@ function CustomTrackers:StartCooldownPolling(bar)
                         visibilityChanged = true
                         icon.isVisible = baseVisible
                         if baseVisible then
-                            icon:Show()
+                            if inCombatLockdown then
+                                icon:SetAlpha(1)
+                            else
+                                icon:Show()
+                            end
                         else
                             StopActiveGlow(icon)
-                            icon:Hide()
+                            if inCombatLockdown then
+                                icon:SetAlpha(0)
+                            else
+                                icon:Hide()
+                            end
                         end
                     end
                 end
 
                 -- Apply visual state only if icon should render
-                -- Dynamic layout: use layoutVisible (already accounts for all visibility options)
-                -- Static layout: use baseVisible but apply alpha-based hiding for special modes
-                local shouldRender = dynamicLayout and layoutVisible or (baseVisible and combatVisible)
+                -- combatVisible is applied here (alpha-based) rather than in Show/Hide
+                -- to avoid ADDON_ACTION_BLOCKED on secure child frames during combat
+                local shouldRender = (dynamicLayout and layoutVisible or (not dynamicLayout and baseVisible)) and combatVisible
                 if shouldRender then
                     if isActive and not showOnlyOnCooldown then
                         -- Active state: saturated + glow + full alpha
@@ -1876,6 +1912,10 @@ function CustomTrackers:StartCooldownPolling(bar)
                             icon.tex:SetDesaturated(false)
                         end
                     end
+                else
+                    -- Not rendering (e.g. showOnlyInCombat and out of combat)
+                    StopActiveGlow(icon)
+                    icon:SetAlpha(0)
                 end
 
                 -- Duration text: Always use Blizzard's built-in countdown
@@ -1929,7 +1969,9 @@ function CustomTrackers:StartCooldownPolling(bar)
         end
 
         -- Relayout if visibility changed (hideNonUsable mode)
-        if visibilityChanged then
+        -- Skip during combat: ClearAllPoints/SetPoint are protected on
+        -- frames with SecureActionButton children. Layout syncs on combat end.
+        if visibilityChanged and not InCombatLockdown() then
             LayoutVisibleIcons(bar)
         end
     end
@@ -2394,6 +2436,9 @@ initFrame:RegisterEvent("PLAYER_SPECIALIZATION_CHANGED")
 initFrame:RegisterEvent("PLAYER_TALENT_UPDATE")
 -- Pet change detection (warlock demons, hunter pets with unique abilities)
 initFrame:RegisterEvent("UNIT_PET")
+-- Combat state changes for showOnlyInCombat icon visibility
+initFrame:RegisterEvent("PLAYER_REGEN_DISABLED")
+initFrame:RegisterEvent("PLAYER_REGEN_ENABLED")
 initFrame:SetScript("OnEvent", function(self, event, ...)
     -- Spec change: refresh all bars to load spec-appropriate spells
     -- PLAYER_SPECIALIZATION_CHANGED only fires for player, no unit check needed
@@ -2448,6 +2493,20 @@ initFrame:SetScript("OnEvent", function(self, event, ...)
                     end
                 end
             end)
+        end
+        return
+    end
+
+    -- Combat state change: update icon visibility
+    if event == "PLAYER_REGEN_DISABLED" or event == "PLAYER_REGEN_ENABLED" then
+        for _, bar in pairs(CustomTrackers.activeBars) do
+            if bar and bar:IsShown() and bar.DoUpdate then
+                bar.DoUpdate()
+                -- After combat ends, sync layout that was deferred during combat
+                if event == "PLAYER_REGEN_ENABLED" and bar.config and bar.config.dynamicLayout then
+                    LayoutVisibleIcons(bar)
+                end
+            end
         end
         return
     end
