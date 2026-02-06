@@ -4,6 +4,8 @@ local function GetCore()
     return (_G.QUI and _G.QUI.QUICore) or ns.Addon
 end
 
+local QUICore = GetCore()
+
 ---------------------------------------------------------------------------
 -- INSTANCE FRAMES SKINNING (PVE, Dungeons & Raids, PVP, M+ Dungeons)
 ---------------------------------------------------------------------------
