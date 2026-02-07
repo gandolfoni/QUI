@@ -1047,6 +1047,8 @@ function QUI_Anchoring_Options:CreateMultiAnchorDialog(settingsDB, onChange, anc
         if scrollDown then scrollDown:Hide(); scrollDown:SetAlpha(0) end
     end
     
+    ns.ApplyScrollWheel(scrollFrame)
+
     -- Create multi-anchor controls inside the scrollable content
     local PAD = 10
     local FORM_ROW = 30

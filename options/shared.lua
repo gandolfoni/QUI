@@ -18,6 +18,20 @@ local SECTION_HEADER_GAP = 46  -- Section header height + spacing below underlin
 local PADDING = 15  -- Standard left/right padding for all content
 local SLIDER_HEIGHT = 65  -- Standard height for slider widgets
 
+-- Mouse wheel scroll speed (pixels per tick)
+local SCROLL_STEP = 60
+ns.SCROLL_STEP = SCROLL_STEP
+
+function ns.ApplyScrollWheel(scrollFrame)
+    scrollFrame:EnableMouseWheel(true)
+    scrollFrame:SetScript("OnMouseWheel", function(self, delta)
+        local currentScroll = self:GetVerticalScroll()
+        local maxScroll = self:GetVerticalScrollRange()
+        local newScroll = math.max(0, math.min(currentScroll - (delta * SCROLL_STEP), maxScroll))
+        self:SetVerticalScroll(newScroll)
+    end)
+end
+
 -- Nine-point anchor options (used for UI element positioning)
 local NINE_POINT_ANCHOR_OPTIONS = {
     {value = "TOPLEFT", text = "Top Left"},
@@ -225,6 +239,8 @@ local function CreateScrollableContent(parent)
             end)
         end)
     end
+    
+    ns.ApplyScrollWheel(scrollFrame)
 
     return scrollFrame, content
 end

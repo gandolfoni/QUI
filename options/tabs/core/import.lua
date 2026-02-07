@@ -61,6 +61,7 @@ local function CreateScrollableTextBox(parent, height, text)
     end)
 
     scrollFrame:SetScrollChild(editBox)
+    ns.ApplyScrollWheel(scrollFrame)
 
     container.editBox = editBox
     container.scrollFrame = scrollFrame
@@ -106,6 +107,7 @@ local function BuildImportExportTab(tabContent)
     exportScroll:SetScript("OnSizeChanged", function(self)
         exportEditBox:SetWidth(self:GetWidth() - 10)
     end)
+    ns.ApplyScrollWheel(exportScroll)
 
     -- Background for export box
     local exportBg = tabContent:CreateTexture(nil, "BACKGROUND")
@@ -181,6 +183,7 @@ local function BuildImportExportTab(tabContent)
     importScroll:SetScript("OnSizeChanged", function(self)
         importEditBox:SetWidth(self:GetWidth() - 10)
     end)
+    ns.ApplyScrollWheel(importScroll)
 
     -- Background for import box - make it clickable to focus the editbox
     local importBg = CreateFrame("Button", nil, tabContent)
