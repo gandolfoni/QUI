@@ -12,6 +12,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 
 
+
+## v2.27.0 - 2026-02-07
+
+### Added
+- added maelstrom weapon as second resource for enhancement shamans
+
+### Changed
+- improved mousewheel scroll speed for easier navigation throughout the options panels (thx to Mør)
+
+### Fixed
+- fixed unitframes not showing on beta
 ## v2.26.2 - 2026-02-07
 
 ### Changed
