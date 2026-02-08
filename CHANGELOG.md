@@ -13,6 +13,20 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 
 
+
+## v2.28.0 - 2026-02-08
+
+### Added
+- added a defensive patch for Blizzard's EncounterWarning text throwing errors
+
+
+### Changed
+- reworked parts of custom trackers to fix issues with dynamic layouts and clickable icons. **this makes 'dynamic layout' and 'clickable icons' mutually exclusive options for custom trackers.**
+- renamed 'Import' menu to 'Import & Export Strings'
+
+
+### Fixed
+- fixed resource bar visibility setting overriding CDM visibility setting in some cases
 ## v2.27.0 - 2026-02-07
 
 ### Added
