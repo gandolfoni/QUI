@@ -725,11 +725,6 @@ local function CreateCustomTrackersPage(parent)
         hideNonUsableCheck:SetPoint("RIGHT", lowerContainer, "RIGHT", -PAD, 0)
         y = y - FORM_ROW
 
-        local clickableIconsCheck = GUI:CreateFormCheckbox(lowerContainer, "Clickable Icons", "clickableIcons", barConfig, RefreshThisBar)
-        clickableIconsCheck:SetPoint("TOPLEFT", 0, y)
-        clickableIconsCheck:SetPoint("RIGHT", lowerContainer, "RIGHT", -PAD, 0)
-        y = y - FORM_ROW
-
         -----------------------------------------------------------------------
         -- POSITIONING SECTION (moved to lowerContainer for better flow)
         -----------------------------------------------------------------------
@@ -1086,6 +1081,56 @@ local function CreateCustomTrackersPage(parent)
         dynamicLayoutDesc:SetWordWrap(true)
         dynamicLayoutDesc:SetHeight(40)
         y = y - 50
+
+        local clickableIconsCheck = GUI:CreateFormCheckbox(lowerContainer, "Clickable Icons", "clickableIcons", barConfig, RefreshThisBar)
+        clickableIconsCheck:SetPoint("TOPLEFT", 0, y)
+        clickableIconsCheck:SetPoint("RIGHT", lowerContainer, "RIGHT", -PAD, 0)
+        y = y - FORM_ROW
+
+        local mutualExclusionDesc = GUI:CreateLabel(lowerContainer, "Clickable Icons and Dynamic Layout are mutually exclusive. Clickable icons use secure frames that prevent layout changes during combat.", 11, C.textMuted)
+        mutualExclusionDesc:SetPoint("TOPLEFT", 0, y)
+        mutualExclusionDesc:SetPoint("RIGHT", lowerContainer, "RIGHT", -PAD, 0)
+        mutualExclusionDesc:SetJustifyH("LEFT")
+        mutualExclusionDesc:SetWordWrap(true)
+        mutualExclusionDesc:SetHeight(30)
+        y = y - 40
+
+        -- Mutual exclusion: clickableIcons and dynamicLayout cannot both be enabled
+        -- Legacy migration: if both are enabled, dynamicLayout wins — force clickableIcons off
+        if barConfig.dynamicLayout and barConfig.clickableIcons then
+            barConfig.clickableIcons = false
+            clickableIconsCheck.SetValue(false, true)
+        end
+        if clickableIconsCheck.SetEnabled then
+            clickableIconsCheck:SetEnabled(not barConfig.dynamicLayout)
+        end
+        if dynamicLayoutCheck.SetEnabled then
+            dynamicLayoutCheck:SetEnabled(not barConfig.clickableIcons)
+        end
+        if clickableIconsCheck.track then
+            clickableIconsCheck.track:SetScript("OnClick", function()
+                local newVal = not clickableIconsCheck.GetValue()
+                clickableIconsCheck.SetValue(newVal, true)
+                if newVal and dynamicLayoutCheck.SetEnabled then
+                    dynamicLayoutCheck:SetEnabled(false)
+                elseif dynamicLayoutCheck.SetEnabled then
+                    dynamicLayoutCheck:SetEnabled(true)
+                end
+                RefreshThisBar()
+            end)
+        end
+        if dynamicLayoutCheck.track then
+            dynamicLayoutCheck.track:SetScript("OnClick", function()
+                local newVal = not dynamicLayoutCheck.GetValue()
+                dynamicLayoutCheck.SetValue(newVal, true)
+                if newVal and clickableIconsCheck.SetEnabled then
+                    clickableIconsCheck:SetEnabled(false)
+                elseif clickableIconsCheck.SetEnabled then
+                    clickableIconsCheck:SetEnabled(true)
+                end
+                RefreshThisBar()
+            end)
+        end
 
         -- Icon Shape slider
         local shapeSlider = GUI:CreateFormSlider(lowerContainer, "Icon Shape", 1.0, 2.0, 0.01, "aspectRatioCrop", barConfig, RefreshThisBar)

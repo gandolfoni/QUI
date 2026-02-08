@@ -760,7 +760,7 @@ end
 ---------------------------------------------------------------------------
 -- ICON CREATION
 ---------------------------------------------------------------------------
-local function CreateTrackerIcon(parent)
+local function CreateTrackerIcon(parent, clickable)
     local icon = CreateFrame("Frame", nil, parent)
     icon.__customTrackerIcon = true  -- Marker for tooltip visibility system
     icon:SetSize(36, 36)  -- Default, will be resized
@@ -849,39 +849,43 @@ local function CreateTrackerIcon(parent)
         end
     end)
 
-    -- Secure click button for item/spell usage (hidden by default, enabled per-bar)
-    icon.clickButton = CreateFrame("Button", nil, icon, "SecureActionButtonTemplate")
-    icon.clickButton:SetAllPoints()
-    icon.clickButton:RegisterForClicks("AnyUp", "AnyDown")
-    icon.clickButton:EnableMouse(true)
-    icon.clickButton:Hide()
+    -- Secure click button for item/spell usage (only created when clickable is true)
+    -- Icons with SecureActionButtonTemplate children become protected during combat,
+    -- so we only create them when needed (never for dynamicLayout bars).
+    if clickable then
+        icon.clickButton = CreateFrame("Button", nil, icon, "SecureActionButtonTemplate")
+        icon.clickButton:SetAllPoints()
+        icon.clickButton:RegisterForClicks("AnyUp", "AnyDown")
+        icon.clickButton:EnableMouse(true)
+        icon.clickButton:Hide()
 
-    -- Forward drag events to parent bar (preserve bar dragging when clickable)
-    icon.clickButton:RegisterForDrag("LeftButton")
-    icon.clickButton:SetScript("OnDragStart", function(self)
-        local bar = self:GetParent():GetParent()
-        if bar and bar.config and not bar.config.locked and not bar.config.lockedToPlayer and not bar.config.lockedToTarget then
-            bar:StartMoving()
-        end
-    end)
-    icon.clickButton:SetScript("OnDragStop", function(self)
-        local bar = self:GetParent():GetParent()
-        if bar then
-            bar:StopMovingOrSizing()
-            local dragStopHandler = bar:GetScript("OnDragStop")
-            if dragStopHandler then
-                dragStopHandler(bar)
+        -- Forward drag events to parent bar (preserve bar dragging when clickable)
+        icon.clickButton:RegisterForDrag("LeftButton")
+        icon.clickButton:SetScript("OnDragStart", function(self)
+            local bar = self:GetParent():GetParent()
+            if bar and bar.config and not bar.config.locked and not bar.config.lockedToPlayer and not bar.config.lockedToTarget then
+                bar:StartMoving()
             end
-        end
-    end)
+        end)
+        icon.clickButton:SetScript("OnDragStop", function(self)
+            local bar = self:GetParent():GetParent()
+            if bar then
+                bar:StopMovingOrSizing()
+                local dragStopHandler = bar:GetScript("OnDragStop")
+                if dragStopHandler then
+                    dragStopHandler(bar)
+                end
+            end
+        end)
 
-    -- Forward tooltip events through the secure button
-    icon.clickButton:SetScript("OnEnter", function(self)
-        SetupIconTooltip(self:GetParent())
-    end)
-    icon.clickButton:SetScript("OnLeave", function()
-        GameTooltip:Hide()
-    end)
+        -- Forward tooltip events through the secure button
+        icon.clickButton:SetScript("OnEnter", function(self)
+            SetupIconTooltip(self:GetParent())
+        end)
+        icon.clickButton:SetScript("OnLeave", function()
+            GameTooltip:Hide()
+        end)
+    end
 
     return icon
 end
@@ -1369,8 +1373,10 @@ function CustomTrackers:UpdateBarIcons(bar)
     end
 
     -- Create icons for each entry
+    -- dynamicLayout bars must not have secure children (Show/Hide must work in combat)
+    local clickable = config.clickableIcons and not config.dynamicLayout
     for i, entry in ipairs(entries) do
-        local icon = CreateTrackerIcon(bar)
+        local icon = CreateTrackerIcon(bar, clickable)
         StyleTrackerIcon(icon, config)
 
         -- Store entry reference
@@ -1433,10 +1439,21 @@ end
 -- we pre-filter icons on spec/talent change and only update the active set.
 -- This reduces update loop from O(all configured) to O(known spells only).
 
+-- Bars that need a full RebuildActiveSet (with Show/Hide + layout) after combat ends.
+-- During combat we update data but use alpha-based visibility to avoid ADDON_ACTION_BLOCKED.
+local pendingActiveSetRebuilds = {}
+
 -- Rebuild the active icon set for a bar
 -- Called on: spec change, talent change, bar creation, hideNonUsable toggle
 local function RebuildActiveSet(bar)
     if not bar then return end
+
+    -- During combat lockdown, icon frames with SecureActionButtonTemplate children
+    -- make Show/Hide protected. Use alpha-based visibility instead for those bars.
+    -- Bars without secure children (dynamicLayout bars) can Show/Hide freely.
+    -- Note: all icons on a bar share the same clickable state, so checking [1] suffices.
+    local hasSecureChildren = bar.icons and bar.icons[1] and bar.icons[1].clickButton
+    local inCombat = hasSecureChildren and InCombatLockdown()
 
     bar.activeIcons = bar.activeIcons or {}
     wipe(bar.activeIcons)
@@ -1468,14 +1485,26 @@ local function RebuildActiveSet(bar)
                 icon._usable = true
                 icon.isVisible = true  -- Mark as visible for layout
                 icon.tex:SetDesaturated(false)  -- Ensure known spells are full color
-                icon:Show()
+                if inCombat then
+                    icon:SetAlpha(1)
+                else
+                    icon:Show()
+                end
             else
                 -- Unknown spell: hide if hideNonUsable is on, otherwise show desaturated (but not tracked)
                 if hideNonUsable then
-                    icon:Hide()
+                    if inCombat then
+                        icon:SetAlpha(0)
+                    else
+                        icon:Hide()
+                    end
                     icon.isVisible = false  -- Mark as NOT visible for layout (allows collapse)
                 else
-                    icon:Show()
+                    if inCombat then
+                        icon:SetAlpha(1)
+                    else
+                        icon:Show()
+                    end
                     icon.isVisible = true  -- Still visible (just desaturated)
                     icon.tex:SetDesaturated(true)  -- Grey out unknown spells
                     icon.cooldown:Clear()  -- No cooldown tracking for unknown spells
@@ -1485,8 +1514,13 @@ local function RebuildActiveSet(bar)
         end
     end
 
-    -- Re-layout with the new active set
-    LayoutVisibleIcons(bar)
+    -- Re-layout with the new active set (skip during combat — layout uses
+    -- ClearAllPoints/SetPoint which are also protected on secure children)
+    if inCombat then
+        pendingActiveSetRebuilds[bar] = true
+    else
+        LayoutVisibleIcons(bar)
+    end
 
     -- DEBUG: Remove this line after verifying the optimization works
     -- print("|cFF00FF00[QUI Debug]|r RebuildActiveSet: " .. #bar.activeIcons .. " of " .. #(bar.icons or {}) .. " icons active")
@@ -1787,10 +1821,10 @@ function CustomTrackers:StartCooldownPolling(bar)
                     end
                 end
 
-                -- Combat-safe Show/Hide: icon frames may have a SecureActionButton
-                -- child (clickableIcons) that makes Show/Hide protected in combat.
-                -- Fall back to alpha-based visibility during combat lockdown.
-                local inCombatLockdown = InCombatLockdown()
+                -- Combat-safe Show/Hide: icon frames with a SecureActionButton
+                -- child (clickableIcons) make Show/Hide protected in combat.
+                -- Fall back to alpha-based visibility only for those bars.
+                local inCombatLockdown = icon.clickButton and InCombatLockdown()
 
                 if dynamicLayout then
                     -- Track visibility state change (affects layout)
@@ -1968,11 +2002,15 @@ function CustomTrackers:StartCooldownPolling(bar)
             end
         end
 
-        -- Relayout if visibility changed (hideNonUsable mode)
-        -- Skip during combat: ClearAllPoints/SetPoint are protected on
-        -- frames with SecureActionButton children. Layout syncs on combat end.
-        if visibilityChanged and not InCombatLockdown() then
-            LayoutVisibleIcons(bar)
+        -- Relayout if visibility changed (dynamic layout or hideNonUsable mode)
+        -- Skip during combat only for bars with secure children (clickableIcons),
+        -- where ClearAllPoints/SetPoint are protected. Layout syncs on combat end.
+        -- Note: all icons on a bar share the same clickable state, so checking [1] suffices.
+        if visibilityChanged then
+            local hasSecureChildren = bar.icons and bar.icons[1] and bar.icons[1].clickButton
+            if not hasSecureChildren or not InCombatLockdown() then
+                LayoutVisibleIcons(bar)
+            end
         end
     end
 
@@ -2215,6 +2253,11 @@ function CustomTrackers:RefreshAll()
     if not db or not db.bars then return end
 
     for _, barConfig in ipairs(db.bars) do
+        -- Legacy migration: clickableIcons and dynamicLayout are mutually exclusive.
+        -- If both are enabled (from an older profile), dynamicLayout wins.
+        if barConfig.dynamicLayout and barConfig.clickableIcons then
+            barConfig.clickableIcons = false
+        end
         if barConfig.id then
             self:CreateBar(barConfig.id, barConfig)
         end
@@ -2499,13 +2542,28 @@ initFrame:SetScript("OnEvent", function(self, event, ...)
 
     -- Combat state change: update icon visibility
     if event == "PLAYER_REGEN_DISABLED" or event == "PLAYER_REGEN_ENABLED" then
+        -- After combat ends, sync bars that used alpha-based visibility during combat.
+        -- Data (activeIcons, _usable) is already current — just do proper Show/Hide + layout.
+        if event == "PLAYER_REGEN_ENABLED" then
+            for bar in pairs(pendingActiveSetRebuilds) do
+                if bar then
+                    -- Sync Show/Hide state to match the alpha-based visibility set during combat
+                    for _, icon in ipairs(bar.icons or {}) do
+                        if icon.isVisible then
+                            icon:Show()
+                        else
+                            icon:Hide()
+                        end
+                    end
+                    LayoutVisibleIcons(bar)
+                end
+            end
+            wipe(pendingActiveSetRebuilds)
+        end
+
         for _, bar in pairs(CustomTrackers.activeBars) do
             if bar and bar:IsShown() and bar.DoUpdate then
                 bar.DoUpdate()
-                -- After combat ends, sync layout that was deferred during combat
-                if event == "PLAYER_REGEN_ENABLED" and bar.config and bar.config.dynamicLayout then
-                    LayoutVisibleIcons(bar)
-                end
             end
         end
         return
