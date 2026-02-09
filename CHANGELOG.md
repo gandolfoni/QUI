@@ -14,6 +14,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 
 
+
+## v2.28.1 - 2026-02-09
+
+### Fixed
+- fixed keyboard being unusable after leaving edit mode
 ## v2.28.0 - 2026-02-08
 
 ### Added
