@@ -1900,22 +1900,122 @@ local function CreateCDMSetupPage(parent)
         enableSecondary:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
         y = y - FORM_ROW
 
+        -- Helper: create a flowing row of QUI-styled spec checkboxes
+        local specList = ns.SwapCandidateSpecs or {}
+        local FONT_PATH = GUI.FONT_PATH or [[Interface\AddOns\QUI\assets\Quazii.ttf]]
+        local QUICore = GetCore()
+        local function CreateSpecCheckboxRow(parent, dbTable, onChange, startY)
+            local BOX_SIZE = 16
+            local ITEM_GAP = 10
+            local LINE_HEIGHT = 24
+            local maxWidth = (GUI.CONTENT_WIDTH or 800) - (2 * PAD) - 10
+            local x = PAD
+            local lineY = startY
+
+            for _, info in ipairs(specList) do
+                -- Container button for the entire checkbox+label area
+                local btn = CreateFrame("Button", nil, parent, "BackdropTemplate")
+                btn:SetHeight(BOX_SIZE + 4)
+
+                -- The checkbox square
+                local box = CreateFrame("Frame", nil, btn, "BackdropTemplate")
+                box:SetSize(BOX_SIZE, BOX_SIZE)
+                box:SetPoint("LEFT", btn, "LEFT", 0, 0)
+                local px = (QUICore and QUICore.GetPixelSize and QUICore:GetPixelSize(box)) or 1
+                box:SetBackdrop({
+                    bgFile = "Interface\\Buttons\\WHITE8x8",
+                    edgeFile = "Interface\\Buttons\\WHITE8x8",
+                    edgeSize = px,
+                })
+
+                -- Checkmark: two rotated lines forming a ✓ (same style as dropdown chevrons)
+                local checkLeft = box:CreateTexture(nil, "OVERLAY")
+                checkLeft:SetColorTexture(C.accent[1], C.accent[2], C.accent[3], 0.7)
+                checkLeft:SetSize(5, 2)
+                checkLeft:SetPoint("CENTER", box, "CENTER", -2, -1)
+                checkLeft:SetRotation(math.rad(-45))
+
+                local checkRight = box:CreateTexture(nil, "OVERLAY")
+                checkRight:SetColorTexture(C.accent[1], C.accent[2], C.accent[3], 0.7)
+                checkRight:SetSize(8, 2)
+                checkRight:SetPoint("CENTER", box, "CENTER", 2, 0)
+                checkRight:SetRotation(math.rad(45))
+
+                -- Spec name label
+                local label = btn:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+                label:SetFont(FONT_PATH, 11, "")
+                label:SetText("|cFF" .. info.classColor .. info.name .. "|r")
+                label:SetPoint("LEFT", box, "RIGHT", 5, 0)
+
+                -- Visual update
+                local isChecked = dbTable[info.specID] and true or false
+                local function UpdateVisual(val)
+                    if val then
+                        box:SetBackdropColor(C.accent[1], C.accent[2], C.accent[3], 0.15)
+                        box:SetBackdropBorderColor(C.accent[1] * 0.8, C.accent[2] * 0.8, C.accent[3] * 0.8, 1)
+                        checkLeft:Show()
+                        checkRight:Show()
+                    else
+                        box:SetBackdropColor(C.toggleOff[1], C.toggleOff[2], C.toggleOff[3], 1)
+                        box:SetBackdropBorderColor(0.12, 0.14, 0.18, 1)
+                        checkLeft:Hide()
+                        checkRight:Hide()
+                    end
+                end
+                UpdateVisual(isChecked)
+
+                -- Measure item width and size the button
+                local textWidth = label:GetStringWidth() or 80
+                local itemWidth = BOX_SIZE + 5 + textWidth + ITEM_GAP
+                btn:SetWidth(itemWidth)
+
+                -- Wrap to next line if needed
+                if x + itemWidth > maxWidth + PAD and x > PAD then
+                    x = PAD
+                    lineY = lineY - LINE_HEIGHT
+                end
+
+                btn:SetPoint("TOPLEFT", parent, "TOPLEFT", x, lineY)
+                x = x + itemWidth
+
+                -- Click handler
+                btn:SetScript("OnClick", function()
+                    isChecked = not isChecked
+                    dbTable[info.specID] = isChecked
+                    UpdateVisual(isChecked)
+                    if onChange then onChange() end
+                end)
+
+                -- Hover effects
+                btn:SetScript("OnEnter", function()
+                    if isChecked then
+                        box:SetBackdropBorderColor(C.accentHover[1], C.accentHover[2], C.accentHover[3], 1)
+                    else
+                        box:SetBackdropBorderColor(0.25, 0.28, 0.35, 1)
+                    end
+                end)
+                btn:SetScript("OnLeave", function()
+                    if isChecked then
+                        box:SetBackdropBorderColor(C.accent[1] * 0.8, C.accent[2] * 0.8, C.accent[3] * 0.8, 1)
+                    else
+                        box:SetBackdropBorderColor(0.12, 0.14, 0.18, 1)
+                    end
+                end)
+            end
+
+            return lineY - LINE_HEIGHT
+        end
+
         -- Swap secondary to primary position
         local swapToggle = GUI:CreateFormToggle(tabContent, "Swap Secondary to Primary Position", "swapToPrimaryPosition", secondary, RefreshPowerBars)
         swapToggle:SetPoint("TOPLEFT", PAD, y)
         swapToggle:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
         y = y - FORM_ROW
 
-        local swapDesc = GUI:CreateLabel(tabContent,
-            "|cFF33937FDevastation|r, |cFF33937FAugmentation|r, "
-            .. "|cFFF48CBAProtection|r, |cFFF48CBARetribution|r, "
-            .. "|cFF8788EEAffliction|r, |cFF8788EEDemonology|r, |cFF8788EEDestruction|r "
-            .. "& |cFF0070DDEnhancement|r Support Only.",
-            11, C.textMuted)
-        swapDesc:SetPoint("TOPLEFT", PAD, y)
-        swapDesc:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
-        swapDesc:SetJustifyH("LEFT")
-        y = y - 25
+        local swapSpecLabel = GUI:CreateLabel(tabContent, "Swap enabled for:", 11, C.textMuted)
+        swapSpecLabel:SetPoint("TOPLEFT", PAD, y)
+        y = y - 16
+        y = CreateSpecCheckboxRow(tabContent, secondary.swapSpecs, RefreshPowerBars, y)
 
         -- Auto-hide primary when swapped
         local hideOnSwapToggle = GUI:CreateFormToggle(tabContent, "Auto-Hide Primary Bar When Swapped", "hidePrimaryOnSwap", secondary, RefreshPowerBars)
@@ -1923,11 +2023,10 @@ local function CreateCDMSetupPage(parent)
         hideOnSwapToggle:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
         y = y - FORM_ROW
 
-        local hideOnSwapDesc = GUI:CreateLabel(tabContent, "Automatically hides the Primary resource bar when the Secondary bar is swapped to its position.", 11, C.textMuted)
-        hideOnSwapDesc:SetPoint("TOPLEFT", PAD, y)
-        hideOnSwapDesc:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
-        hideOnSwapDesc:SetJustifyH("LEFT")
-        y = y - 25
+        local hideSpecLabel = GUI:CreateLabel(tabContent, "Auto-hide enabled for:", 11, C.textMuted)
+        hideSpecLabel:SetPoint("TOPLEFT", PAD, y)
+        y = y - 16
+        y = CreateSpecCheckboxRow(tabContent, secondary.hideSpecs, RefreshPowerBars, y)
 
         -- Visibility mode dropdowns
         local visibilityOptions = {
@@ -3495,6 +3594,12 @@ local function CreateCDMSetupPage(parent)
         if secondary.snapGap == nil then secondary.snapGap = 5 end
         if secondary.swapToPrimaryPosition == nil then secondary.swapToPrimaryPosition = false end
         if secondary.hidePrimaryOnSwap == nil then secondary.hidePrimaryOnSwap = false end
+        if not secondary.swapSpecs then
+            secondary.swapSpecs = { [66]=true, [70]=true, [263]=true, [265]=true, [266]=true, [267]=true, [1467]=true, [1473]=true }
+        end
+        if not secondary.hideSpecs then
+            secondary.hideSpecs = { [66]=true, [70]=true, [263]=true, [265]=true, [266]=true, [267]=true, [1467]=true, [1473]=true }
+        end
 
         -- Callback to refresh power bars
         local function RefreshPowerBars()

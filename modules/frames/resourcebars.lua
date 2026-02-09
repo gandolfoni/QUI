@@ -188,18 +188,19 @@ local druidSpecResource = {
     [4] = Enum.PowerType.Mana,         -- Restoration
 }
 
--- Specs where the secondary resource is more gameplay-relevant than the primary
--- Used for "Swap Secondary to Primary Position" feature
+-- Spec info for the "Swap Secondary to Primary Position" feature
+-- Used by both runtime checks and the options UI (via namespace export)
 local SwapCandidateSpecs = {
-    [66]   = true,  -- Paladin: Protection
-    [70]   = true,  -- Paladin: Retribution
-    [263]  = true,  -- Shaman: Enhancement
-    [265]  = true,  -- Warlock: Affliction
-    [266]  = true,  -- Warlock: Demonology
-    [267]  = true,  -- Warlock: Destruction
-    [1467] = true,  -- Evoker: Devastation
-    [1473] = true,  -- Evoker: Augmentation
+    { specID = 1467, name = "Devastation",  classColor = "33937F" },  -- Evoker
+    { specID = 1473, name = "Augmentation", classColor = "33937F" },  -- Evoker
+    { specID = 66,   name = "Protection",   classColor = "F48CBA" },  -- Paladin
+    { specID = 70,   name = "Retribution",  classColor = "F48CBA" },  -- Paladin
+    { specID = 265,  name = "Affliction",   classColor = "8788EE" },  -- Warlock
+    { specID = 266,  name = "Demonology",   classColor = "8788EE" },  -- Warlock
+    { specID = 267,  name = "Destruction",  classColor = "8788EE" },  -- Warlock
+    { specID = 263,  name = "Enhancement",  classColor = "0070DD" },  -- Shaman
 }
+ns.SwapCandidateSpecs = SwapCandidateSpecs
 
 local function ShouldSwapBars()
     local cfg = QUICore and QUICore.db and QUICore.db.profile and QUICore.db.profile.secondaryPowerBar
@@ -207,7 +208,19 @@ local function ShouldSwapBars()
     local spec = GetSpecialization()
     if not spec then return false end
     local specID = GetSpecializationInfo(spec)
-    return specID and SwapCandidateSpecs[specID] or false
+    return specID and cfg.swapSpecs and cfg.swapSpecs[specID] or false
+end
+
+local function ShouldHidePrimaryOnSwap()
+    local cfg = QUICore and QUICore.db and QUICore.db.profile and QUICore.db.profile.secondaryPowerBar
+    if not cfg or not cfg.swapToPrimaryPosition or not cfg.hidePrimaryOnSwap then return false end
+    local spec = GetSpecialization()
+    if not spec then return false end
+    local specID = GetSpecializationInfo(spec)
+    if not specID then return false end
+    local swapEnabled = cfg.swapSpecs and cfg.swapSpecs[specID]
+    local hideEnabled = cfg.hideSpecs and cfg.hideSpecs[specID]
+    return (swapEnabled and hideEnabled) or false
 end
 
 -- RESOURCE DETECTION
@@ -961,8 +974,8 @@ function QUICore:UpdatePowerBar()
         return
     end
 
-    -- Auto-hide primary when secondary is swapped to primary position
-    if ShouldSwapBars() and self.db.profile.secondaryPowerBar.hidePrimaryOnSwap then
+    -- Auto-hide primary when secondary is swapped to primary position (per-spec)
+    if ShouldHidePrimaryOnSwap() then
         if self.powerBar then
             self.powerBar:SetAlpha(0)
             self.powerBar:Show()  -- Keep shown at alpha 0 so anchored frames retain reference

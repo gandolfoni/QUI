@@ -1352,6 +1352,26 @@ local defaults = {
             lockedToPrimary   = true,   -- Position above + match Primary bar width
             swapToPrimaryPosition = false,  -- Show secondary bar at primary bar's position (supported specs only)
             hidePrimaryOnSwap = false,      -- Auto-hide primary bar when secondary is swapped to its position
+            swapSpecs = {                   -- Per-spec swap enable (all candidates default on)
+                [66]   = true,  -- Paladin: Protection
+                [70]   = true,  -- Paladin: Retribution
+                [263]  = true,  -- Shaman: Enhancement
+                [265]  = true,  -- Warlock: Affliction
+                [266]  = true,  -- Warlock: Demonology
+                [267]  = true,  -- Warlock: Destruction
+                [1467] = true,  -- Evoker: Devastation
+                [1473] = true,  -- Evoker: Augmentation
+            },
+            hideSpecs = {                   -- Per-spec auto-hide enable (all candidates default on)
+                [66]   = true,  -- Paladin: Protection
+                [70]   = true,  -- Paladin: Retribution
+                [263]  = true,  -- Shaman: Enhancement
+                [265]  = true,  -- Warlock: Affliction
+                [266]  = true,  -- Warlock: Demonology
+                [267]  = true,  -- Warlock: Destruction
+                [1467] = true,  -- Evoker: Devastation
+                [1473] = true,  -- Evoker: Augmentation
+            },
             snapGap       = 5,        -- Gap when snapped
             orientation   = "AUTO",   -- Bar orientation
             visibility    = "always",  -- "always", "combat", "hostile"
