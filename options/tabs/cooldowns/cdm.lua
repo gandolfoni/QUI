@@ -1900,21 +1900,23 @@ local function CreateCDMSetupPage(parent)
         enableSecondary:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
         y = y - FORM_ROW
 
-        -- Helper: create a flowing row of QUI-styled spec checkboxes
+        -- Helper: create a self-sizing container of QUI-styled spec checkboxes that reflows on resize
         local specList = ns.SwapCandidateSpecs or {}
         local FONT_PATH = GUI.FONT_PATH or [[Interface\AddOns\QUI\assets\Quazii.ttf]]
         local QUICore = GetCore()
-        local function CreateSpecCheckboxRow(parent, dbTable, onChange, startY)
+        local function CreateSpecCheckboxRow(parent, dbTable, onChange)
             local BOX_SIZE = 16
             local ITEM_GAP = 10
             local LINE_HEIGHT = 24
-            local maxWidth = (GUI.CONTENT_WIDTH or 800) - (2 * PAD) - 10
-            local x = PAD
-            local lineY = startY
+
+            local container = CreateFrame("Frame", nil, parent)
+            container:SetHeight(LINE_HEIGHT)
+
+            local items = {}
 
             for _, info in ipairs(specList) do
                 -- Container button for the entire checkbox+label area
-                local btn = CreateFrame("Button", nil, parent, "BackdropTemplate")
+                local btn = CreateFrame("Button", nil, container, "BackdropTemplate")
                 btn:SetHeight(BOX_SIZE + 4)
 
                 -- The checkbox square
@@ -1965,18 +1967,11 @@ local function CreateCDMSetupPage(parent)
                 UpdateVisual(isChecked)
 
                 -- Measure item width and size the button
-                local textWidth = label:GetStringWidth() or 80
+                local textWidth = label:GetStringWidth() or 100
                 local itemWidth = BOX_SIZE + 5 + textWidth + ITEM_GAP
                 btn:SetWidth(itemWidth)
 
-                -- Wrap to next line if needed
-                if x + itemWidth > maxWidth + PAD and x > PAD then
-                    x = PAD
-                    lineY = lineY - LINE_HEIGHT
-                end
-
-                btn:SetPoint("TOPLEFT", parent, "TOPLEFT", x, lineY)
-                x = x + itemWidth
+                table.insert(items, { btn = btn, width = itemWidth })
 
                 -- Click handler
                 btn:SetScript("OnClick", function()
@@ -2003,7 +1998,31 @@ local function CreateCDMSetupPage(parent)
                 end)
             end
 
-            return lineY - LINE_HEIGHT
+            -- Reflow: position all checkboxes within the container, wrapping at container width
+            local function Reflow()
+                local totalWidth = container:GetWidth()
+                if not totalWidth or totalWidth < 50 then return end
+                local x = PAD
+                local lineY = 0
+
+                for _, item in ipairs(items) do
+                    if x + item.width > totalWidth - PAD and x > PAD then
+                        x = PAD
+                        lineY = lineY - LINE_HEIGHT
+                    end
+                    item.btn:ClearAllPoints()
+                    item.btn:SetPoint("TOPLEFT", container, "TOPLEFT", x, lineY)
+                    x = x + item.width
+                end
+
+                local totalHeight = math.abs(lineY) + LINE_HEIGHT
+                container:SetHeight(totalHeight)
+            end
+
+            container:SetScript("OnSizeChanged", function() Reflow() end)
+            C_Timer.After(0, Reflow)
+
+            return container
         end
 
         -- Swap secondary to primary position
@@ -2015,18 +2034,22 @@ local function CreateCDMSetupPage(parent)
         local swapSpecLabel = GUI:CreateLabel(tabContent, "Swap enabled for:", 11, C.textMuted)
         swapSpecLabel:SetPoint("TOPLEFT", PAD, y)
         y = y - 16
-        y = CreateSpecCheckboxRow(tabContent, secondary.swapSpecs, RefreshPowerBars, y)
 
-        -- Auto-hide primary when swapped
+        local swapSpecRow = CreateSpecCheckboxRow(tabContent, secondary.swapSpecs, RefreshPowerBars)
+        swapSpecRow:SetPoint("TOPLEFT", tabContent, "TOPLEFT", 0, y)
+        swapSpecRow:SetPoint("RIGHT", tabContent, "RIGHT", 0, 0)
+
+        -- Everything below chains off the auto-sizing checkbox containers
         local hideOnSwapToggle = GUI:CreateFormToggle(tabContent, "Auto-Hide Primary Bar When Swapped", "hidePrimaryOnSwap", secondary, RefreshPowerBars)
-        hideOnSwapToggle:SetPoint("TOPLEFT", PAD, y)
+        hideOnSwapToggle:SetPoint("TOPLEFT", swapSpecRow, "BOTTOMLEFT", PAD, -4)
         hideOnSwapToggle:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
-        y = y - FORM_ROW
 
         local hideSpecLabel = GUI:CreateLabel(tabContent, "Auto-hide enabled for:", 11, C.textMuted)
-        hideSpecLabel:SetPoint("TOPLEFT", PAD, y)
-        y = y - 16
-        y = CreateSpecCheckboxRow(tabContent, secondary.hideSpecs, RefreshPowerBars, y)
+        hideSpecLabel:SetPoint("TOPLEFT", hideOnSwapToggle, "BOTTOMLEFT", 0, -4)
+
+        local hideSpecRow = CreateSpecCheckboxRow(tabContent, secondary.hideSpecs, RefreshPowerBars)
+        hideSpecRow:SetPoint("TOPLEFT", hideSpecLabel, "BOTTOMLEFT", -PAD, -4)
+        hideSpecRow:SetPoint("RIGHT", tabContent, "RIGHT", 0, 0)
 
         -- Visibility mode dropdowns
         local visibilityOptions = {
@@ -2036,49 +2059,68 @@ local function CreateCDMSetupPage(parent)
         }
 
         local visPrimary = GUI:CreateFormDropdown(tabContent, "Primary Visibility", visibilityOptions, "visibility", primary, RefreshPowerBars)
-        visPrimary:SetPoint("TOPLEFT", PAD, y)
+        visPrimary:SetPoint("TOPLEFT", hideSpecRow, "BOTTOMLEFT", PAD, -4)
         visPrimary:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
-        y = y - FORM_ROW
 
         local visSecondary = GUI:CreateFormDropdown(tabContent, "Secondary Visibility", visibilityOptions, "visibility", secondary, RefreshPowerBars)
-        visSecondary:SetPoint("TOPLEFT", PAD, y)
+        visSecondary:SetPoint("TOPLEFT", visPrimary, "BOTTOMLEFT", 0, -4)
         visSecondary:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
-        y = y - FORM_ROW
 
         -- Standalone toggles
         local standalonePrimary = GUI:CreateFormToggle(tabContent, "Primary Standalone Mode", "standaloneMode", primary, PromptResourceBarReload)
-        standalonePrimary:SetPoint("TOPLEFT", PAD, y)
+        standalonePrimary:SetPoint("TOPLEFT", visSecondary, "BOTTOMLEFT", 0, -4)
         standalonePrimary:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
-        y = y - FORM_ROW
 
         local standaloneSecondary = GUI:CreateFormToggle(tabContent, "Secondary Standalone Mode", "standaloneMode", secondary, PromptResourceBarReload)
-        standaloneSecondary:SetPoint("TOPLEFT", PAD, y)
+        standaloneSecondary:SetPoint("TOPLEFT", standalonePrimary, "BOTTOMLEFT", 0, -4)
         standaloneSecondary:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
-        y = y - FORM_ROW
 
         local secondaryImptText = GUI:CreateLabel(tabContent, "IMPT: If you choose NOT to display a Primary Bar, and ONLY want a Secondary Bar, toggle this ON. Else it will not show.", 11, C.warning)
-        secondaryImptText:SetPoint("TOPLEFT", PAD, y)
+        secondaryImptText:SetPoint("TOPLEFT", standaloneSecondary, "BOTTOMLEFT", 0, -4)
         secondaryImptText:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
         secondaryImptText:SetJustifyH("LEFT")
-        y = y - 25
 
         local standaloneDesc = GUI:CreateLabel(tabContent, "Standalone Mode: Bar won't fade or hide with CDM visibility. Use if you don't use Essential/Utility cooldown displays.", 11, C.textMuted)
-        standaloneDesc:SetPoint("TOPLEFT", PAD, y)
+        standaloneDesc:SetPoint("TOPLEFT", secondaryImptText, "BOTTOMLEFT", 0, -6)
         standaloneDesc:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
         standaloneDesc:SetJustifyH("LEFT")
-        y = y - 25
 
         -- Unthrottled CPU Use toggle (affects both primary and secondary)
         local unthrottledToggle = GUI:CreateFormToggle(tabContent, "Unthrottled CPU Use", "unthrottledCPU", primary, RefreshPowerBars)
-        unthrottledToggle:SetPoint("TOPLEFT", PAD, y)
+        unthrottledToggle:SetPoint("TOPLEFT", standaloneDesc, "BOTTOMLEFT", 0, -8)
         unthrottledToggle:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
-        y = y - FORM_ROW
 
         local unthrottledDesc = GUI:CreateLabel(tabContent, "Remove throttle on the number of updates per second. Toggle on for smoother updates, but higher CPU Usage.", 11, C.textMuted)
-        unthrottledDesc:SetPoint("TOPLEFT", PAD, y)
+        unthrottledDesc:SetPoint("TOPLEFT", unthrottledToggle, "BOTTOMLEFT", 0, -4)
         unthrottledDesc:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
         unthrottledDesc:SetJustifyH("LEFT")
-        y = y - 25
+
+        -- Sentinel frame to bridge from relative anchoring back to y offset for the caller
+        local sentinel = CreateFrame("Frame", nil, tabContent)
+        sentinel:SetHeight(1)
+        sentinel:SetPoint("TOPLEFT", unthrottledDesc, "BOTTOMLEFT", -PAD, -8)
+        sentinel:SetPoint("RIGHT", tabContent, "RIGHT", 0, 0)
+        sentinel._getBottom = function()
+            local sTop = sentinel:GetTop()
+            local pTop = tabContent:GetTop()
+            if sTop and pTop then return math.floor(sTop - pTop - 1) end
+            return nil
+        end
+
+        -- Return a conservative y estimate; the sentinel will provide the real value after layout
+        -- 2 checkbox rows (est 24px each) + 2 toggles (32px) + 2 dropdowns (32px) + 2 toggles (32px)
+        -- + 3 labels (~25px) + unthrottled toggle + desc + gaps
+        local estimatedCheckboxHeight = 24 * 2  -- two checkbox rows
+        local estimatedFixedHeight = FORM_ROW * 6 + 25 * 3 + 8 * 6
+        y = y - estimatedCheckboxHeight - estimatedFixedHeight
+
+        -- Correct the y value after layout when the actual heights are known
+        C_Timer.After(0, function()
+            local realY = sentinel._getBottom()
+            if realY and tabContent:IsShown() then
+                tabContent:SetHeight(math.abs(realY) + 500)
+            end
+        end)
 
         return y
     end
